@@ -1,0 +1,8 @@
+go 1.25.3
+
+use (
+	./apps/saas-zero-auth
+	./apps/saas-zero-basedata
+	./apps/saas-zero-gateway
+	./saas-zero-common
+)
