@@ -74,6 +74,7 @@ SaaS-Zero 是一套可直接落地的多租户 SaaS 中后台微服务解决方�
 | [saas-zero-basedata](https://github.com/saas-zero/saas-zero-basedata) | HTTP + gRPC | `:18083 / :18084` | API 层（JWT/Casbin/操作日志中间件）→ RPC 层（Ent 业务 + 策略管理） |
 | [saas-zero-etcd](https://github.com/saas-zero/saas-zero-etcd) | etcd | — | etcd 调试工具 |
 | [saas-zero-common](https://github.com/saas-zero/saas-zero-common) | Go 库 | — | Mixin / 雪花 ID / bcrypt / JWT / 加密 / Casbin / 错误码等公共库 |
+| [saas-zero-web](https://github.com/Kun-GitHub/saas-zero-web) | 前端项目 |
 
 ## 技术栈
 
@@ -105,7 +106,8 @@ SaaS-Zero 是一套可直接落地的多租户 SaaS 中后台微服务解决方�
 git clone https://github.com/saas-zero/saas-zero-auth.git        apps/saas-zero-auth
 git clone https://github.com/saas-zero/saas-zero-basedata.git    apps/saas-zero-basedata
 git clone https://github.com/saas-zero/saas-zero-gateway.git     apps/saas-zero-gateway
-git clone https://github.com/saas-zero/saas-zero-common.git      saas-zero-common
+git clone https://github.com/saas-zero/saas-zero-common.git      saas-zero-common  
+git clone https://github.com/Kun-GitHub/saas-zero-web.git      saas-zero-web  
 
 # 1) 基础数据 RPC（gRPC，依赖 etcd + PostgreSQL）
 go run ./apps/saas-zero-basedata/rpc
