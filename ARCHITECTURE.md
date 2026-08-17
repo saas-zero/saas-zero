@@ -39,11 +39,11 @@
 | 服务 | 协议 | 端口 | 职责 |
 |---|---|---|---|
 | **gateway** | HTTP 代理 | `:18080` | 统一入口，按路径转发到对应 upstream，不做任何鉴权 |
-| **auth** | HTTP API + gRPC client | `:18081` | 登录认证、JWT 签发、令牌验证/刷新、用户信息/菜单/权限查询 |
-| **basedata API** | HTTP API + gRPC client | `:18083` | 对外暴露 CRUD 接口、JWT 解析注入、Casbin 运行时权限校验、调 RPC |
+| **auth** | HTTP API + gRPC client | `:18081` | 登录认证（验证码/bcrypt/锁定检查）、JWT 签发、令牌验证/刷新、用户信息/菜单/权限查询 |
+| **basedata API** | HTTP API + gRPC client | `:18083` | 对外暴露 CRUD 接口、JWT 解析注入、Casbin 运行时权限校验、写操作日志、调 RPC |
 | **basedata RPC** | gRPC server | `:18084` | 核心业务逻辑、Ent DB 操作、Casbin 策略管理、自动审计字段填充 |
 
-**设计原则：** Gateway 是唯一对外暴露的节点，auth 和 basedata API 只对 gateway 开放（内网访问）。
+**设计原则：** Gateway 是唯一对外暴露的节点，auth 和 basedata API 只对 gateway 开放（内网访问）。所有租户隔离、权限判定收敛在 basedata API（HTTP 层）完成。
 
 ### 通信方式
 
@@ -83,7 +83,8 @@
 |---|---|---|
 | **必填隔离** | `tenant_id > 0`，每条数据必须属于某个租户 | sys_user, sys_role, sys_dept |
 | **继承隔离** | `tenant_id >= 0`，0=系统默认，>0=租户自定义 | sys_dict, sys_dict_data |
-| **无隔离** | 无 tenant_id 字段，全局共享 | sys_tenant, sys_menu, sys_api, sys_package, sys_login_log, sys_operation_log |
+| **无隔离** | 无 TenantMixin，全局共享（角色分配/前端菜单按需隔离） | sys_tenant, sys_menu, sys_api, sys_package |
+| **日志自建字段** | 无 TenantMixin，但自建 `tenant_id` 业务字段（默认 0） | sys_login_log, sys_operation_log |
 
 > 注意：sys_menu 和 sys_tenant 实际无 tenant_id 字段（sys_menus、sys_tenants 表无 TenantMixin），属于全局共享数据。sys_package 同样无 tenant_id。
 
@@ -131,32 +132,42 @@ apis, err := client.SysApi.Query().All(ctx)
 
 ## 三、认证与授权
 
-### 认证流程
+### 认证流程（多租户登录）
 
 ```
-1. 用户 → POST /oauth/login → Auth 服务
-2. Auth → gRPC GetUserByUsername → 查用户
-3. Auth → bcrypt.Verify 密码
-4. Auth → 生成 JWT（含 userId, tenantId, userName, roleCodes）
-5. 返回 JWT 给前端
+1. 用户 → POST /oauth/login {tenantCode, username, password, captchaId?, captchaVal?} → Auth 服务
+2. Auth → gRPC GetTenantByCode(tenantCode) → 确定租户（顺带校验）
+3. Auth → gRPC GetUserByUsername(tenantId, username) → 租户隔离查用户
+4. 锁定/状态预检：lockout_until > now → 账号锁定；status != active → 账号禁用
+5. Auth → bcrypt.Verify 密码（失败累计 5 次锁定 30 分钟）
+6. Auth → gRPC GetUserRoleCodes(userId) → roleCodes
+7. Auth → 生成 JWT（含 userId, tenantId, userName, roleCodes, tokenVersion）
+8. Redis 写入 token:<jti> + token_version:<userId>
+9. 返回 JWT 给前端；写登录日志
 ```
+
+> `sys_users.username` 不再全局唯一，改为 `(tenant_id, username)` 联合唯一索引，不同租户可存在同名用户。
 
 ### 授权数据流
 
 ```
 请求 → Gateway → Basedata API
                   │
-                  ├─ JWT 中间件 (所有 /system/* 路由)
-                  │   ├─ Bearer token → jwt.Parse → {userId, tenantId, userName, roleCodes}
+                  ├─ JWT 中间件 (所有 /system/* 路由；/init/* 跳过)
+                  │   ├─ Bearer token → jwt.Parse → {userId, tenantId, userName, roleCodes, tokenVersion}
+                  │   ├─ Redis 校验: token:<jti> 存在 && tokenVersion == token_version:<userId>
                   │   └─ context = mixins.SetCurrentUserId/Name/TenantId(ctx, ...)
                   │      context = context.WithValue(ctx, "role_codes", claims.RoleCodes)
                   │
-                  ├─ Casbin 中间件 (跳过 /init/*)
+                  ├─ Casbin 中间件 (跳过 /init/* 与 /system/api/mine)
                   │   ├─ roleCodes = GetRoleCodes(ctx)
                   │   ├─ tenantId = mixins.GetCurrentTenantId(ctx)
                   │   ├─ dom = strconv.FormatInt(tenantId, 10)
                   │   ├─ for each roleCode: enforcer.Enforce(roleCode, dom, path, method)
                   │   └─ 全拒 → 403 Forbidden
+                  │
+                  ├─ OperationLog 中间件 (非 GET 且非 /init/* 记录写操作日志)
+                  │   └─ 异步调 gRPC CreateOperationLog → sys_operation_logs
                   │
                   └─ Logic → gRPC (context 已有 auth info)
                               └─ gRPC Auth Interceptor → mixins.SetCurrent*()
@@ -167,13 +178,16 @@ apis, err := client.SysApi.Query().All(ctx)
 
 ```go
 type Claims struct {
-    UserId    int64    `json:"userId"`
-    TenantId  int64    `json:"tenantId"`
-    UserName  string   `json:"userName"`
-    RoleCodes []string `json:"roleCodes"`  // 登录时从 user.GetRoleCodes() 写入
+    UserId       int64    `json:"userId"`
+    TenantId     int64    `json:"tenantId"`
+    UserName     string   `json:"userName"`
+    RoleCodes    []string `json:"roleCodes"`    // 登录时从 user.GetRoleCodes() 写入
+    TokenVersion int64    `json:"tokenVersion"` // 改密/重配权限后 INCR，踢旧会话
     gojwt.RegisteredClaims
 }
 ```
+
+**TokenVersion 会话控制：** 修改密码、重置密码、角色分配 API 后 `INCR redis token_version:<userId>`；JWT 中间件校验 Claims.TokenVersion 与 Redis 中的值一致才放行，不一致即判失效——权限变更后旧 token 立即失效，无需等待过期。
 
 ### Casbin 策略模型
 
@@ -229,6 +243,18 @@ sys_user ──── M:N ──── sys_role ──── M:N ──── sy
 API 鉴权和菜单权限分离：
 - **API 权限**：通过 Casbin 策略管理，运行时由 middleware 拦截校验
 - **菜单权限**：通过 `sys_role_menus` 关联表（ent edge）管理，前端根据角色加载菜单树
+
+### 继承式授权（只能授出自己拥有的权限）
+
+核心原则：**当前用户只能把已有的菜单/API 权限授给别人**，default 租户管理员（超集）不受限。三层保障：
+
+1. **菜单树 `GetMenuTree`**：default 租户 admin → 全量菜单；其他用户 → 自己全部角色分配菜单的**并集 + 父级链补全**（`unionMenusWithParents`），避免悬空父节点。同一逻辑服务 `/oauth/menus`（左侧菜单）、`/system/menu/tree`（分配菜单弹窗）、`/oauth/permissions`（按钮权限码）
+2. **我的 API `GetMyApis`** → `GET /system/api/mine`：default 租户 admin → 全量 API；其他用户 → 自己角色在 Casbin 策略中的 API 并集 + 补 group 父节点。该接口在 Casbin 中间件中**放行**（自带用户隔离，JWT 仍保护）
+3. **后端强校验 `checkAssignableMenus / checkAssignableApis`**：`assignMenus` / `assignApis` 写入前校验提交的 ID 均落在当前用户可授权范围内，越权 → `403 Forbidden`，防止绕过前端弹窗直接调接口提权
+
+### 策略自动重载
+
+RPC 层通过 `AssignApis` 修改策略后实时写入 `casbin_rule` 表；API 层启动时加载全量策略，并在后台 goroutine **每 30 秒 `LoadPolicy()`** 从数据库重新加载——分配权限后最迟 30 秒生效，无需重启服务。
 
 ## 四、数据层设计
 
@@ -304,12 +330,13 @@ SysTenant
 
 前端 JavaScript 的 Number 类型只能安全表示 -2^53 ~ 2^53 的整数。Go 的 int64 最大值 2^63 会导致精度丢失。
 
-**规则：** 所有返回前端的 ID 字段在 gRPC proto 中定义为 `string` 类型，Logic 层用 `strconv.FormatInt()` / `strconv.ParseInt()` 转换。
+**规则：** 对外返回采用**双字段模式**——`id`（number，展示/比较）+ `idStr`（string，所有 API 传参使用），proto 中返回前端的 ID 定义为 `string`：
 
 ```protobuf
 message UserResponse {
     string id = 1;       // int64 → string，避免精度丢失
-    string username = 2;
+    string idStr = 2;    // 双字段：id + idStr
+    string username = 3;
 }
 ```
 
@@ -318,15 +345,19 @@ message UserResponse {
 id, _ := strconv.ParseInt(in.Id, 10, 64)
 user, _ := client.SysUser.Get(ctx, id)
 return &apps.UserResponse{
-    Id: strconv.FormatInt(user.ID, 10),
+    Id:    strconv.FormatInt(user.ID, 10),
+    IdStr: strconv.FormatInt(user.ID, 10), // id + idStr 同源
+    Username: user.Username,
 }
 ```
+
+前端规则：ProTable `rowKey` 必须使用 `"idStr"`，请求 DTO 的 `id` 传 `idStr` 的值。
 
 ## 七、关键设计决策
 
 | 决策 | 选项 | 选择理由 |
 |---|---|---|
-| 租户隔离 | 行级 tenant_id | 简单、灵活、不需要独立数据库 |
+| 租户隔离 | 行级 tenant_id | 简单、灵活、不需要独立数据库；字典用 0=系统默认实现继承 |
 | 字典继承 | tenant_id=0 表示系统默认 | 无需额外关联表，查询逻辑简洁 |
 | 审计字段 | Mixin Hook 自动填充 | 不依赖开发者手动设值，防止遗漏 |
 | 软删除 vs 硬删除 | 软删除（deleted_at） | 可恢复，数据可审计 |
@@ -334,8 +365,11 @@ return &apps.UserResponse{
 | **API 鉴权** | **Casbin Domain RBAC + casbin_rule 表** | 原生多租户支持，keyMatch 通配，无需维护关联表 |
 | 菜单权限 | sys_role_menus 关联表（ent edge） | Casbin 不管理前端菜单 |
 | **角色-API 关联** | **Casbin 策略（casbin_rule 表）** | 不创建 sys_role_apis 表，避免双写同步 |
+| **授权范围** | **继承式授权（授出范围=自己权限）** | 只能授已有的权限，default 租户管理员超集不受限；防越权提权 |
+| **权限变更生效** | **tokenVersion 会话失效 + 策略 30s 热加载** | 分配/改密后旧会话立即失效，策略变更无需重启 |
 | 代码生成 | Ent + goctl (--style goZero) | 驼峰命名，标准化 |
-| ID 返回前端 | string 类型 | 避免 int64 精度丢失 |
+| ID 返回前端 | string 双字段（id + idStr） | 避免 int64 精度丢失 |
 | JSON 字段 | camelCase | 前端 JavaScript 惯例 |
 | JWT 中间件位置 | Basedata API 层 | Gateway 纯代理不做鉴权，basedata API 统一解析 |
 | Casbin 执行位置 | Basedata API 层 | JWT 解析后直接检查，无需额外 RPC 调用 |
+| 请求方法 | update/delete 均用 POST | 简化网关转发，规避浏览器/网关对 PUT/DELETE 的限制 |
