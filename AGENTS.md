@@ -1,81 +1,1052 @@
-# SaaS-Zero 项目文档指南（本仓库）
+# SaaS-Zero 开发指南
 
-> 本仓库（`github.com/saas-zero/saas-zero`）是 **SaaS-Zero 开源项目的展示仓库**——仅承载整体架构与功能介绍，**不含业务代码**。各微服务代码分别在独立仓库中维护，见下方「代码仓库索引」。
+> 本仓库（`github.com/saas-zero/saas-zero`）是 SaaS-Zero 的代码仓库：承载架构文档与全部后端微服务代码。
+>
+> - 深度架构设计：[`doc/ARCHITECTURE.md`](./doc/ARCHITECTURE.md)
+> - 快速上手 / 接口总览：[`README.md`](./README.md)
+> - 本文（`AGENTS.md`）：面向开发者与 AI 代理的工程指南 —— 技术栈、目录结构、代码风格、Ent Mixin、Casbin 权限、初始化流程、常用命令。
 
-本文件约定如何维护本仓库的文档，供协作者与 AI 代理阅读。
+## 模块一览
 
-## 仓库定位
+全部模块（gateway / auth / basedata / job / file / gen / etcd / common）均在本仓库 `apps/` 与 `saas-zero-common/` 内；其中 auth / basedata / gateway / common 由 `go.work` 聚合，job / file / gen / etcd 未纳入 workspace（构建方式见「启动顺序」与「常用命令速查」）。
 
-- **给谁看：** 潜在用户、技术评估者、开源社区
-- **做什么：** 用简洁清晰的方式讲清楚 SaaS-Zero「是什么、解决什么问题、怎么跑起来」
-- **不做什么：** 不含源代码、不含内部部署信息、不含敏感凭据
+## 技术栈
 
-## 目录结构
+| 技术 | 用途 | 版本 |
+|---|---|---|
+| **Go** | 编程语言 | 1.25.3 |
+| **go-zero** | 微服务框架 | v1.9.2 |
+| **ent** | ORM / 实体框架 | v0.14.5 |
+| **PostgreSQL** | 主数据库 | via lib/pq |
+| **gRPC** | 服务间通信 | google.golang.org/grpc |
+| **Protobuf** | 序列化 | v3 |
+| **etcd** | 服务发现 / 配置分发 | v3.5.15 |
+| **JWT** | 认证令牌 | github.com/golang-jwt/jwt/v5 (非 go-zero 内置) |
+| **Casbin** | 运行时 API 权限控制 | v2.135.0 (Domain RBAC 多租户) |
+| **OpenTelemetry** | 链路追踪 | go-zero 内置 |
+| **Pyroscope** | 性能分析 | go-zero 内置 |
+
+## 项目架构
 
 ```
-.
-├── README.md            # 入口文档（推广主页）：特性、架构全景、技术栈、快速开始、模块链接
-├── ARCHITECTURE.md      # 深度架构设计：分层、多租户、认证授权、Casbin 模型、实体关系、关键决策
-├── AGENTS.md            # 本文件：文档维护约定
+saas-zero/
 ├── apps/
-│   ├── saas-zero-gateway/README.md   # 网关模块说明（独立仓库入口）
-│   ├── saas-zero-auth/README.md      # 认证模块说明（独立仓库入口）
-│   ├── saas-zero-basedata/README.md  # 基础数据模块说明（独立仓库入口）
-│   └── saas-zero-etcd/README.md      # Etcd 调试工具说明（独立仓库入口）
-├── saas-zero-common/README.md        # 公共库说明（独立仓库入口）
-├── doc/images/          # 截图 / 架构图
-├── LICENSE / NOTICE     # Apache-2.0 协议与声明
-└── go.work              # Go workspace（配合各模块仓库聚合构建用）
+│   ├── saas-zero-gateway/        # API 网关 - HTTP 纯代理 (go-zero gateway)
+│   ├── saas-zero-auth/           # 认证服务 - OAuth 登录/验证 (HTTP API)
+│   ├── saas-zero-basedata/       # 基础数据服务 (HTTP API + gRPC RPC)
+│   │   ├── api/                  # HTTP 对外接口 (CRUD + init)
+│   │   └── rpc/                  # gRPC 内部服务 (业务逻辑 + Ent DB)
+│   ├── saas-zero-job/            # 定时任务服务 (HTTP API :18086 + gRPC :18085，独立库 + 调度器)
+│   ├── saas-zero-file/           # 文件服务 (HTTP API :18091 + gRPC :18090，上传/列表/详情/删除)
+│   ├── saas-zero-gen/            # 代码生成服务 (HTTP API :18093 + gRPC :18092，表导入/预览/生成)
+│   └── saas-zero-etcd/           # Etcd 调试工具
+└── saas-zero-common/             # 公共库
+    ├── pkg/ent/mixins/           # Ent 可复用混入字段
+    ├── pkg/snowflake/            # 雪花 ID 生成器
+    ├── pkg/bcrypt/               # 密码哈希与验证
+    ├── pkg/jwt/                  # JWT 签名与解析 (含 roleCodes/tokenVersion)
+    ├── pkg/crypto/               # AES-GCM 加解密
+    ├── pkg/casbin/               # Casbin Domain RBAC 多租户模型 + PostgreSQL adapter
+    ├── pkg/errno/                # 统一业务错误码 (Errno{Code,Msg})
+    ├── pkg/id/                   # int64 ↔ string 转换 (前端精度无损)
+    ├── pkg/pagination/           # 分页参数标准化 (page/size/offset)
+    ├── pkg/redis/                # Redis 客户端封装 (go-zero/go-redis)
+    ├── pkg/captcha/              # 图形验证码 (base64Captcha)
+    ├── pkg/envconf/              # 环境变量覆盖配置项 (生产覆盖 YAML 明文)
+    └── pkg/timex/                # 时间格式化工具
+
+    # logger/response/config 等功能已由 go-zero 框架内置，无需重复封装
 ```
 
-## 代码仓库索引
+### 服务调用链
 
-各模块独立建仓，README 中应提供对应链接：
+```
+外部请求 → saas-zero-gateway (:18080) — HTTP 纯透传代理
+              ├── /oauth/* → saas-zero-auth (:18081)
+              │                └── gRPC → saas-zero-basedata (:18084)
+              │                              ├── GetTenantByCode(tenantCode) → tenantId
+              │                              ├── GetUserByUsername(tenantId, username) → user
+              │                              └── PostgreSQL
+              └── /system/* → saas-zero-basedata API (:18083)
+              │                ├── JWT 中间件 (解析 token → context)
+              │                ├── Casbin 中间件 (遍历 roleCodes 权限检查)
+              │                └── gRPC → saas-zero-basedata RPC (:18084)
+              └── /init/*   → saas-zero-basedata API (:18083) — 跳过认证
+              └── /system/job/* → saas-zero-job API (:18086)
+                                ├── JWT 中间件 (同 basedata)
+                                ├── Casbin 中间件 (跳过 /system/job/handlers)
+                                └── gRPC → saas-zero-job RPC (:18085) → 独立库 saas_zero_job
+```
 
-| 模块 | 仓库 |
+依赖关系：`gateway → auth → basedata → common`，`gateway → basedata`，`gateway → job`
+
+`job` / `file` / `gen` 为**平台级独立服务**：各自持有独立 ent schema 与数据库，不经 basedata；job 与 file/gen 均未纳入 `go.work`（见「启动顺序」）。
+
+## 代码风格
+
+### 命名规范
+
+| 项目 | 规范 | 示例 |
+|---|---|---|
+| Go 文件 | snake_case | `sys_user.go`, `servicecontext.go` |
+| 包名 | 小写 | `schema`, `logic`, `mixins` |
+| 结构体 | PascalCase | `SysUser`, `ServiceContext` |
+| 接口 | PascalCase | `SysUsers` |
+| 方法 / 函数 | PascalCase | `GetUserById`, `NewServiceContext` |
+| 私有方法 | camelCase | `extractToken`, `saveLog` |
+| 常量 | PascalCase | `UserIdKey`, `TenantIdKey` |
+| YAML 配置键 | camelCase | `basedataservice.yaml` |
+| JSON 字段应返回给前端的 | camelCase | `"username"`, `"tenantId"` |
+| 数据库表名 | snake_case 复数 | `sys_users`, `sys_roles` |
+| 数据库列名 | snake_case | `created_at`, `tenant_id` |
+| goctl 生成风格 | `goZero` | `sysUser.go`, `sysRole.go` |
+| ent 生成包名 | 自动派生自结构体 | `SysUser` → `sysuser` |
+
+### ID 精度处理
+
+前端 JavaScript 无法精确处理 int64（> 2^53 丢失精度）。所有返回前端的 ID 字段须用 string 类型：
+
+- **Protobuf:** `int64 id = 1` → `string id = 1`
+- **JSON 返回:** `"idStr": "123456789012345678"`，同时保留 `"id": 123456789012345678`
+
+### 文件标记规范
+
+- 自动生成的代码文件顶部必须有标记：`// Code generated by <工具名>, DO NOT EDIT.`
+- 脚手架文件标记：`// Code scaffolded by goctl. Safe to edit.`
+- 可编辑的生成文件标记：`// Code generated by goctl, but you can edit it.`
+
+### Ent Schema 注释规范
+
+- 每个字段使用中文 + 英文双语注释
+- 表注释通过 `schema.Comment()` 设置
+- 表注释启用 `entsql.WithComments(true)`
+- 注释格式：`comment("英文 | 中文")`
+
+## Ent Mixin 钩子说明
+
+### 自动审计字段（Hooks）
+
+五个 Mixin 内置了自动填充钩子：
+
+| Mixin | 触发时机 | 自动设置的字段 |
+|---|---|---|
+| `BaseMixin` | `OpCreate` | `id`（雪花 ID，仅当未手动设值时） |
+| `CreatedMixin` | `OpCreate` | `created_at`, `created_id`, `created_by` |
+| `UpdatedMixin` | `OpCreate`, `OpUpdate`, `OpUpdateOne` | `updated_at`, `updated_id`, `updated_by` |
+| `DeletedMixin` | `OpUpdate`/`OpUpdateOne`（设置了 `deleted_at`） | `deleted_at`, `deleted_id`, `deleted_by` |
+| `TenantMixin` | `OpCreate` | `tenant_id`（从 context 读取） |
+
+在 Logic 层调用 ent 前，通过 context 传入当前用户和租户信息：
+
+```go
+import "github.com/saas-zero/saas-zero-common/pkg/ent/mixins"
+
+ctx = mixins.SetCurrentUserId(ctx, 1001)
+ctx = mixins.SetCurrentUserName(ctx, "admin")
+ctx = mixins.SetCurrentTenantId(ctx, 1001)
+client.SysUser.Create().Save(ctx)
+```
+
+软删除用法（通过 Update 设置 deleted_at 触发）：
+
+```go
+client.SysUser.UpdateOneID(id).SetDeletedAt(time.Now()).Save(ctx)
+```
+
+### TenantMixin：两种模式
+
+| 模式 | 使用方式 | tenant_id 规则 | 典型表 |
+|---|---|---|---|
+| 必填 | `mixins.TenantMixin{}` | `.Positive()`，必须 > 0 | `sys_user`, `sys_role`, `sys_dept` |
+| 可选 | `mixins.TenantMixin{Optional: true}` | `.Default(0)`，0=系统默认，>0=租户自定义 | `sys_dict`, `sys_dict_data`（字典继承模式） |
+
+`sys_menu`、`sys_tenant`、`sys_package`、`sys_api` **无 TenantMixin**（全局共享数据）。日志表 `sys_login_log`、`sys_operation_log` 也无 TenantMixin，但**自建了 `tenant_id` 业务字段**（默认 0）。
+
+可选模式的 `tenant_id = 0` 表示"系统默认/公共数据"，实现字典继承。
+
+### 租户隔离原则
+
+**ent 不会自动在查询时加 tenant_id 过滤。** 开发者必须在 Logic 层显式使用辅助方法。具体规则：
+
+#### 查询辅助方法（定义在 `apps/saas-zero-basedata/ent/query_helper.go`）
+
+| 方法 | 适用表 | 说明 |
+|---|---|---|
+| `.ActiveQuery()` | 所有带 `DeletedMixin` 的表 | `WHERE deleted_at IS NULL` |
+| `.TenantQuery(tenantId)` | 带 `TenantMixin{}`（必填）的表 | `WHERE tenant_id = ? AND deleted_at IS NULL` |
+| `.TenantAwareQuery(tenantId)` | 带 `TenantMixin{Optional: true}` 的表 | `WHERE (tenant_id = ? OR tenant_id = 0) AND deleted_at IS NULL` |
+
+#### 用法示例
+
+**普通租户表（sys_user, sys_role, sys_menu 等）：**
+
+```go
+import "github.com/saas-zero/saas-zero-common/pkg/ent/mixins"
+
+// 查询当前租户下的所有角色（未删除）
+tenantId := mixins.GetCurrentTenantId(ctx)
+roles, err := client.SysRole.TenantQuery(tenantId).All(ctx)
+// 等价于: client.SysRole.Query().Where(sysrole.TenantIDEQ(tenantId), sysrole.DeletedAtIsNil()).All(ctx)
+```
+
+**字典继承表（sys_dict, sys_dict_data）：**
+
+```go
+// 查询字典：返回系统默认 + 当前租户自定义
+dicts, err := client.SysDict.TenantAwareQuery(tenantId).All(ctx)
+```
+
+**不需要租户隔离的表（sys_api、sys_tenant、sys_menu、sys_package）：**
+
+```go
+apis, err := client.SysApi.Query().All(ctx)
+```
+
+**日志表（sys_login_log, sys_operation_log）：**无 TenantMixin，但自建 `tenant_id` 业务字段（默认 0），按需使用 `.Query().Where(sysoperationlog.TenantIDEQ(tenantId))` 筛选。
+
+**特殊场景：查全部（含已删除）使用 `.Query()` 替代 `.ActiveQuery()` / `.TenantQuery()`。**
+
+#### 创建/更新时自动设值
+
+Create 时 `TenantMixin` 的 hook 自动从 context 读取 `tenant_id` 并填入字段，开发者只需在调用前设置 context：
+
+```go
+ctx = mixins.SetCurrentTenantId(ctx, tenantId)
+client.SysDict.Create().SetName("订单状态").SetKey("order_status").Save(ctx)
+// tenant_id 由 TenantMixin hook 自动填入，无需手动 .SetTenantID()
+```
+
+对于 `TenantMixin{Optional: true}`（字典表），如果 context 中未设置租户 ID，则默认使用 `tenant_id = 0`（系统字典）。
+
+## 新增数据库表
+
+在 `apps/saas-zero-basedata/ent/schema/` 下新建文件，参考已有表定义：
+
+```go
+package schema
+
+import (
+    "entgo.io/ent"
+    "entgo.io/ent/dialect/entsql"
+    "entgo.io/ent/schema"
+    "entgo.io/ent/schema/field"
+    "entgo.io/ent/schema/index"
+    "github.com/saas-zero/saas-zero-common/pkg/ent/mixins"
+)
+
+type SysXxx struct {
+    ent.Schema
+}
+
+func (SysXxx) Fields() []ent.Field {
+    return []ent.Field{
+        field.String("name").MaxLen(128).Comment("名称 | Name"),
+        // ... 其他业务字段
+    }
+}
+
+func (SysXxx) Mixin() []ent.Mixin {
+    return []ent.Mixin{
+        mixins.BaseMixin{},              // id int64 (雪花ID)
+        mixins.TenantMixin{},            // tenant_id int64 (必填，>0)
+        // 字典继承表使用: mixins.TenantMixin{Optional: true} (tenant_id=0=系统默认)
+        mixins.CreatedMixin{},           // created_at, created_id, created_by
+        mixins.UpdatedMixin{},           // updated_at, updated_id, updated_by
+        mixins.DeletedMixin{},           // deleted_at, deleted_id, deleted_by (软删除)
+        mixins.StatusMixin{},            // status enum (active/inactive/suspended)
+        mixins.SortMixin{},              // sort uint32 (排序号，可选)
+        mixins.RemarkMixin{},            // remark string (备注，可选)
+    }
+}
+
+func (SysXxx) Edges() []ent.Edge {
+    return []ent.Edge{
+        // edge.To("roles", SysRole.Type),          // 多对多
+        // edge.From("sys_tenant", SysTenant.Type).Ref("sys_xxx").Unique().Field("tenant_id"), // 外键
+    }
+}
+
+func (SysXxx) Annotations() []schema.Annotation {
+    return []schema.Annotation{
+        entsql.WithComments(true),
+        schema.Comment("Xxx Table | XXX表"),
+        entsql.Annotation{Table: "sys_xxxs"},  // 复数表名
+    }
+}
+
+func (SysXxx) Indexes() []ent.Index {
+    return []ent.Index{
+        index.Fields("tenant_id", "name"),
+        index.Fields("created_at"),
+    }
+}
+```
+
+### 2. 生成 Ent 代码
+
+```bash
+# 在 saas-zero-basedata 目录下
+cd apps/saas-zero-basedata
+go generate ./ent
+```
+
+这会自动生成：`client.go`, `ent.go`, `*_create.go`, `*_delete.go`, `*_query.go`, `*_update.go`, `migrate/schema.go`, `runtime.go`
+
+**ent 生成的包名为结构体名全小写**（如 `SysUser` → `sysuser`），不可配置。
+
+### 3. 定义 Protobuf 和 gRPC 服务
+
+编辑 `apps/saas-zero-basedata/rpc/basedata_service.proto`，添加 message 和 rpc 定义：
+
+```protobuf
+message XxxReq {
+    string id = 1;   // 使用 string 避免前端 int64 精度丢失
+}
+
+message Xxx {
+    string id = 1;
+    string name = 2;
+}
+
+service SysXxx {
+    rpc GetXxxById(XxxReq) returns (Xxx);
+}
+```
+
+### 4. 生成 gRPC 代码
+
+```bash
+cd apps/saas-zero-basedata/rpc
+goctl rpc protoc basedata_service.proto --go_out=. --go-grpc_out=. --zrpc_out=. -m --style goZero
+```
+
+`--style goZero` 参数确保生成的文件使用驼峰命名。
+
+### 5. 实现 Logic 层
+
+在 `apps/saas-zero-basedata/rpc/internal/logic/` 下新建 logic 文件：
+
+```go
+package logic
+
+import (
+    "context"
+    "strconv"
+    "github.com/saas-zero/saas-zero-basedata/rpc/internal/svc"
+    "github.com/saas-zero/saas-zero-basedata/rpc/apps"
+    "github.com/zeromicro/go-zero/core/logx"
+)
+
+type GetXxxByIdLogic struct {
+    ctx    context.Context
+    svcCtx *svc.ServiceContext
+    logx.Logger
+}
+
+func NewGetXxxByIdLogic(ctx context.Context, svcCtx *svc.ServiceContext) *GetXxxByIdLogic {
+    return &GetXxxByIdLogic{
+        ctx:    ctx,
+        svcCtx: svcCtx,
+        Logger: logx.WithContext(ctx),
+    }
+}
+
+func (l *GetXxxByIdLogic) GetXxxById(in *apps.XxxReq) (*apps.Xxx, error) {
+    id, _ := strconv.ParseInt(in.Id, 10, 64)
+    xxx, err := l.svcCtx.DB.SysXxx.Get(l.ctx, id)
+    if err != nil {
+        return nil, err
+    }
+    return &apps.Xxx{Id: strconv.FormatInt(xxx.ID, 10)}, nil
+}
+```
+
+### 6. (可选) 生成 HTTP API
+
+如果该表需要对外暴露 HTTP 接口，在 basedata-api 目录中：
+
+```bash
+cd apps/saas-zero-basedata/api
+goctl api go -api xxx_service.api -dir . -style goZero
+```
+
+注意：goctl 生成的 `routes.go` 会被覆盖。中间件（JWT / Casbin）注册在 `systemapis.go` 中，不受影响。
+
+### 7. 数据库自动迁移
+
+数据库表会在 startup 时自动创建/更新（`servicecontext.go` 中的 `client.Schema.Create()`），无需手动执行 DDL。
+
+**Casbin 的 `casbin_rule` 表由 adapter 自动创建**（`CREATE TABLE IF NOT EXISTS`），在基于 data RPC 和基于 data API 各自启动时均会执行。
+
+## Casbin 运行时权限控制
+
+### 模型：Domain RBAC（多租户）
+
+```
+[request_definition]
+r = sub, dom, obj, act
+
+[policy_definition]
+p = sub, dom, obj, act, ept
+
+[policy_effect]
+e = some(where (p.eft == allow))
+
+[matchers]
+m = r.sub == p.sub && r.dom == p.dom && keyMatch(r.obj, p.obj) && regexMatch(r.act, p.act)
+```
+
+- `sub` = roleCode（如 `"admin"`, `"user"`）
+- `dom` = tenantId 字符串（如 `"1001"`）
+- `obj` = API 路径（如 `"/system/user/*"`），支持 keyMatch 通配 `*`
+- `act` = HTTP 方法（如 `"POST"`, `"GET"`），支持正则
+- `ept` = apiId 字符串（额外存储，不参与匹配，用于反向查询）
+
+### 策略存储：`casbin_rule` 表
+
+自动创建（`CREATE TABLE IF NOT EXISTS`），由 Casbin adapter 管理：
+
+```sql
+CREATE TABLE casbin_rule (
+    id SERIAL PRIMARY KEY,
+    ptype VARCHAR(100) NOT NULL DEFAULT '',
+    v0 VARCHAR(100) NOT NULL DEFAULT '',  -- roleCode
+    v1 VARCHAR(100) NOT NULL DEFAULT '',  -- tenantId
+    v2 VARCHAR(100) NOT NULL DEFAULT '',  -- api path
+    v3 VARCHAR(100) NOT NULL DEFAULT '',  -- http method
+    v4 VARCHAR(100) NOT NULL DEFAULT '',  -- apiId (extra)
+    v5 VARCHAR(100) NOT NULL DEFAULT ''
+);
+```
+
+### 认证/授权数据流
+
+```
+请求 → Gateway (:18080) → Basedata API (:18083)
+                            │
+                            ├─ JWT 中间件 (*/init/* 跳过)
+                            │   ├─ Bearer token → jwt.Parse → Claims{userId, tenantId, userName, roleCodes, tokenVersion}
+                            │   ├─ Redis 校验: token:<jti> 存在 && tokenVersion 与 token_version:<userId> 一致
+                            │   └─ ctx = mixins.SetCurrentUserId/Name/TenantId(ctx, ...)
+                            │      ctx = context.WithValue(ctx, "role_codes", claims.RoleCodes)
+                            │
+                            ├─ Casbin 中间件 (*/init/* 跳过)
+                            │   ├─ roleCodes = GetRoleCodes(ctx)
+                            │   ├─ tenantId = mixins.GetCurrentTenantId(ctx)
+                            │   ├─ for each roleCode: enforcer.Enforce(roleCode, tenantIdStr, path, method)
+                            │   └─ 全拒 → 403 Forbidden
+                            │
+                            ├─ OperationLog 中间件 (非 GET 且非 /init/* 记录)
+                            │   └─ 异步调 gRPC CreateOperationLog 写 sys_operation_logs
+                            │
+                            └─ Logic → gRPC (context 已有 auth info)
+                                        └─ gRPC Auth Interceptor → mixins.SetCurrent*()
+                                            └─ Ent Mixin Hook → 自动填充 created_id/updated_id
+```
+
+### JWT Claims
+
+```go
+type Claims struct {
+    UserId       int64    `json:"userId"`
+    TenantId     int64    `json:"tenantId"`
+    UserName     string   `json:"userName"`
+    RoleCodes    []string `json:"roleCodes"`    // 登录时从 user.GetRoleCodes() 写入
+    TokenVersion int64    `json:"tokenVersion"` // 改密/分配 API 后递增，踢掉旧会话
+    gojwt.RegisteredClaims
+}
+```
+
+TokenVersion 机制：修改密码、重置密码、角色分配 API 后 `INCR redis token_version:<userId>`，JwtAuth 中间件校验 Claims.TokenVersion 与 Redis 中一致，不一致即判失效（踢旧会话）。
+
+### AssignApis RPC 实现
+
+```go
+// rpc/internal/logic/sysroles/assignApisLogic.go
+func (l *AssignApisLogic) AssignApis(in *apps.RoleReq) (*apps.EmptyResp, error) {
+    roleCode := in.GetCode()
+    tenantId := mixins.GetCurrentTenantId(l.ctx)
+    dom := id.ToString(tenantId)
+
+    // 前端只传 id + apiIds，不传 code，需从角色表查询兜底，否则生成 v0 为空的脏策略
+    role, err := l.svcCtx.DB.SysRole.Get(l.ctx, in.GetId())
+    if err != nil { return nil, err }
+    if role.IsSystem {
+        return nil, errno.New(errno.InvalidParam.Code, "系统内置角色不可修改")
+    }
+    if roleCode == "" {
+        roleCode = role.Code
+    }
+
+    // 继承式授权：只能把当前用户自己拥有的 API 授给别人（default 租户管理员不受限）
+    if err := checkAssignableApis(l.svcCtx, l.ctx, in.GetApiIds()); err != nil {
+        return nil, err
+    }
+
+    // 1. 清除该角色+租户的旧策略
+    l.svcCtx.Enforcer.RemoveFilteredPolicy(0, roleCode, dom)
+
+    // 2. 查 sys_apis 表获取路径和方法；只对 api 类型（非 group 目录）生成策略
+    for _, apiId := range in.GetApiIds() {
+        api, err := l.svcCtx.DB.SysApi.Get(l.ctx, apiId)
+        if err != nil { continue }
+        if api.APIType != sysapi.APITypeAPI { continue }
+        l.svcCtx.Enforcer.AddPolicy(roleCode, dom, api.APIPath, strings.ToUpper(string(api.APIMethod)), id.ToString(apiId))
+    }
+
+    // 3. 递增该角色下所有用户的 token_version，踢掉旧会话
+    users, _ := l.svcCtx.DB.SysUser.Query().Where(sysuser.HasRolesWith(sysrole.CodeEQ(roleCode))).All(l.ctx)
+    for _, u := range users {
+        l.svcCtx.Redis.Incr(fmt.Sprintf("token_version:%d", u.ID))
+    }
+
+    return &apps.EmptyResp{Code: int32(errno.Success.Code), Msg: errno.Success.Msg}, nil
+}
+```
+
+`assignMenusLogic.go` 同理，在分配前调用 `checkAssignableMenus` 校验菜单 ID 范围。
+
+### 反向查询：角色有哪些 API
+
+```go
+// rpc/internal/logic/sysroles/helpers.go
+func roleApiIds(enf *casbinapi.SyncedEnforcer, roleCode string, tenantId int64) []int64 {
+    dom := strconv.FormatInt(tenantId, 10)
+    policies, _ := enf.GetFilteredPolicy(0, roleCode, dom)
+    ids := make([]int64, 0, len(policies))
+    for _, p := range policies {
+        if len(p) > 4 {
+            if id, err := strconv.ParseInt(p[4], 10, 64); err == nil {
+                ids = append(ids, id)
+            }
+        }
+    }
+    return ids
+}
+```
+
+### 继承式授权（菜单/API 授出范围 = 当前用户自己的权限）
+
+核心原则：**只能把已有的权限授给别人**（default 租户管理员超集不受限）。体现在三层：
+
+1. **菜单树 `GetMenuTree`**（`rpc/internal/logic/sysmenus/getMenuTreeLogic.go`）：
+   - default 租户 admin（`tenant.Code=="default"` 且角色含 `admin`）→ 返回全量菜单
+   - 其他用户 → 只返回自己全部角色分配菜单的**并集 + 父级链补全**（`unionMenusWithParents`），避免悬空父节点
+   - 同一逻辑同时服务于 `/oauth/menus`（左侧菜单）、`/system/menu/tree`（分配菜单弹窗）、`/oauth/permissions`（按钮权限码，从树的 button 节点 `path` 收集）
+
+2. **我的 API `GetMyApis`**（`rpc/internal/logic/sysapis/getMyApisLogic.go`）：
+   - RPC `SysApis.GetMyApis` → HTTP `GET /system/api/mine`，供前端"分配 API"弹窗使用
+   - default 租户 admin → 全量 API；其他用户 → 自己所有角色在 Casbin 策略中的 API 并集 + 补 group 父节点（`myRoleApis`）
+   - **该接口在 CasbinAuth 中间件中放行**（只返回当前登录用户自己的 API，自带租户/user 隔离，不需要策略），但 JWT 中间件仍保护
+
+3. **后端强校验 `checkAssignableMenus` / `checkAssignableApis`**（`rpc/internal/logic/sysroles/helpers.go`）：
+   - `assignMenusLogic.go` / `assignApisLogic.go` 在写入前校验提交的 menuIds/apiIds 均在当前用户可授权范围内（`currentUserAuthorized` + `unionMenuWithParents`/`unionAPIWithGroups`）
+   - 越权 → `errno.Forbidden`(403)，防止前端绕过弹窗直接调接口提权
+
+### 新建租户：按钮自动补全（`systenants/createTenantLogic.go`）
+
+创建租户走 `POST /system/tenant/create`（与 `/init/all` 无关）。开通闭环继承套餐菜单时**自动补全按钮节点**：
+
+- 角色 admin 继承套餐菜单（`sys_role_menus`）
+- **额外补全**：套餐所含页面（menu 类型）的全部 button 子节点也一并分配（`sysmenu.MenuTypeButton` + `ParentIDIn(menuIDs...)`）
+- 原因：历史套餐可能只含目录/页面、缺按钮；租户拥有某页面即应有该页面的操作按钮，否则 `/oauth/permissions` 权限码为空、前端按钮不显示
+- 同时同步套餐 API 到 Casbin 策略（`admin` / 新租户 dom）
+
+### 删除租户：清理 Casbin 孤儿策略（`systenants/deleteTenantLogic.go`）
+
+`DELETE`→软删租户后，对该租户 dom 执行 `Enforcer.RemoveFilteredPolicy(1, tenantIdStr)` 清理孤儿策略。雪花 ID 不复用，重建租户用新 dom 不会串权；清理纯属数据卫生，避免 `casbin_rule` 累积与 API 侧 30s reload 反复加载。
+
+### 中间件文件位置
+
+| 文件 | 说明 |
 |---|---|
-| 项目（本仓库） | https://github.com/saas-zero/saas-zero |
-| 网关 | https://github.com/saas-zero/saas-zero-gateway |
-| 认证 | https://github.com/saas-zero/saas-zero-auth |
-| 基础数据 | https://github.com/saas-zero/saas-zero-basedata |
-| Etcd 工具 | https://github.com/saas-zero/saas-zero-etcd |
-| 公共库 | https://github.com/saas-zero/saas-zero-common |
-| 前端 | saas-zero-web（README 中引用） |
+| `basedata/api/internal/middleware/jwtauth.go` | JWT 解析 + Redis 校验（`token:<jti>` 存在 + tokenVersion 一致）+ context 注入，跳 `/init/*`；**fail-closed**：Redis 为 nil 且未显式 `redisDisabled` 时 503 |
+| `basedata/api/internal/middleware/casbinauth.go` | 遍历 roleCodes → `Enforce`，全拒 403，跳 `/init/*` 与 `/system/api/mine`（详见"继承式授权"）；**fail-closed**：Enforcer 为 nil 且未显式 `casbinDisabled` 时 503 |
+| `basedata/api/internal/middleware/operationlog.go` | 记录写操作（非 GET）到 `sys_operation_logs`，跳 GET 与 `/init/*`；**采集请求参数（密码等脱敏）、响应体、HTTP 状态码（status 列）与失败原因（errorMsg→result）** |
 
-## 关键事实基线（文档联动更新时务必保持一致）
+在 `systemapis.go` 中注册：
 
-以下事实若代码仓库变更，应同步到本仓库文档：
+```go
+server.Use(middleware.JwtAuth(c.JwtSecret, ctx.Redis, c.RedisDisabled))
+server.Use(middleware.CasbinAuth(ctx.Enforcer, c.CasbinDisabled))
+server.Use(middleware.OperationLog(ctx.SysLogs))
+handler.RegisterHandlers(server, ctx)        // /system/* 业务路由
+handler.RegisterInitRoutes(server, ctx)      // /init/* 初始化
+handler.RegisterLogRoutes(server, ctx)       // /system/log/* 日志
+```
 
-- 端口约定：gateway `:18080`，auth `:18081`，basedata API `:18083`，basedata RPC `:18084`
-- 接口规模：9 认证 + 60 业务 + 5 初始化 = **74 个端点**，全部经 gateway 访问
-- update / delete 一律 **POST**（delete 传 `{ids: [...]}`）
-- 架构：go-zero Gateway 纯代理 → auth / basedata API（JWT + Casbin + 操作日志中间件）→ basedata RPC（ent DB）→ PostgreSQL
-- 权限：菜单走 `sys_role_menus`（前端导航），API 走 Casbin Domain RBAC（`casbin_rule` 表）；**继承式授权**（只能授出自己拥有的权限）
-- 会话：JWT + Redis `tokenVersion`（改密/重配权限后旧 token 立即失效）
-- ID：雪花 ID，返回前端用 string 双字段（`id` + `idStr`）
-- 数据库：11 业务表 + 4 M:N 关联表 + 1 Casbin 策略表，ent 自动迁移建表
-- 数据隔离：行级 `tenant_id`；字典继承模式 `tenant_id=0` 表示系统默认
-- 初始化：全新环境 `POST /init/all` 一键初始化（幂等可重跑）
+### 两个进程的 Casbin 实例
 
-## 文档编写规范
+| 进程 | 数据库连接 | 用途 |
+|---|---|---|
+| `basedata-rpc` | 同一 PostgreSQL（通过 `sql.Open` 复用连接串） | 策略管理：AssignApis 时 AddPolicy/RemovePolicy |
+| `basedata-api` | 同一 PostgreSQL（通过 `config.CasbinPostgres.DataSource`） | 运行时检查：每个请求 Enforce |
 
-1. **面向读者**：以「读懂架构、上手启动」为目标，技术细节追求准确但不堆砌代码
-2. **写法**：先讲为什么（设计动机），再讲怎么做（关键机制与调用链）
-3. **敏感信息**：严禁出现内网 IP、Windows 绝对路径、真实数据库密码 / 连接串、真实密钥
-4. **端口用示例 IP**：示例一律使用 `127.0.0.1` / `localhost`
-5. **图表**：架构 ASCII 图保持与代码仓库一致；截图放在 `doc/images/` 并以相对路径引用
-6. **一致性**：改代码仓库前，先检查本文档「关键事实基线」是否同步更新
+各自独立 `SyncedEnforcer` 实例，启动时全量加载。策略变更通过 Casbin auto-save 实时写入 `casbin_rule` 表。
 
-## 模块 README 模板
+### Casbin 配置项
 
-各 `apps/*/README.md` 采用统一三段式（中文，简短）：
+`systemApis.yaml` 需要添加：
+
+```yaml
+JwtSecret: saas-zero-secret-key-2024
+CasbinPostgres:
+  DataSource: host=... dbname=...
+```
+
+`config.go` 中对应的结构体：
+
+```go
+type CasbinPostgresConfig struct {
+    DataSource string `json:"dataSource"`
+}
+type Config struct {
+    rest.RestConf
+    JwtSecret      string               `json:"jwtSecret"`
+    Redis          redis.Conf           `json:"redis"`
+    CasbinPostgres CasbinPostgresConfig `json:"casbinPostgres"`
+    Basedata       zrpc.RpcClientConf
+    // CasbinDisabled/RedisDisabled 仅允许本地开发显式关闭对应校验，
+    // 生产环境必须省略这两个字段（保持 go-zero 默认 false，即强制校验）。
+    CasbinDisabled bool `json:"casbinDisabled,optional"`
+    RedisDisabled  bool `json:"redisDisabled,optional"`
+}
+```
+
+### 配置覆盖（环境变量）
+
+YAML 明文便于本地调试，生产环境用环境变量覆盖敏感配置。三个服务的 `main()` 在 `conf.MustLoad` 后统一应用 `saas-zero-common/pkg/envconf`：
+
+| 服务 | 环境变量 |
+|---|---|
+| `basedata-rpc` | `POSTGRES_DSN`（覆盖 `Postgres.DataSource`） |
+| `basedata-api` | `JWT_SECRET`、`CASBIN_POSTGRES_DSN`、`REDIS_HOST`、`REDIS_PASS`、`REDIS_DB` |
+| `auth-api` | `JWT_SECRET`、`REDIS_HOST`、`REDIS_PASS`、`REDIS_DB` |
+
+### Fail-Closed 策略
+
+| 依赖 | 本地开发 | 生产 |
+|---|---|---|
+| Casbin | 配置 `casbinDisabled: true` 跳过权限校验 | 初始化失败 → `log.Fatalf` 中止启动；Enforcer 为 nil → 全部受保护路由 503 |
+| Redis | 配置 `redisDisabled: true` 跳过会话校验 | 初始化失败 → `log.Fatalf` 中止启动；运行时 Redis 不可用 → 401（token 校验失败） |
+
+## 雪花 ID 生成
+
+默认所有表通过 `BaseMixin` 的 Hook 在 `OpCreate` 时自动生成雪花 ID，无需在 Logic 层手动设置。
+
+### Snowflake 工具类
+
+路径：`saas-zero-common/pkg/snowflake/snowflake.go`
+
+- 纯标准库实现，无外部依赖
+- 通过环境变量 `SNOWFLAKE_WORKER_ID` 配置 worker ID（默认 0）
+- `snowflake.NextID() int64` 生成唯一 ID
+- 在 `init()` 中自动初始化，包导入即用
+
+### BaseMixin Hook 逻辑
+
+```go
+type idSettable interface {
+    SetID(int64)
+}
+if s, ok := m.(idSettable); ok {
+    s.SetID(snowflake.NextID())
+}
+```
+
+Hook 始终覆盖未设值的 ID。如需手动指定 ID，在 Hook 执行后调用 `.SetID()` 无效——应在创建前通过 `.Save()` 之外的方式处理。
+
+### ent/runtime 导入
+
+`ent/runtime` 必须在应用启动时空白导入，否则 `defaults()` 中的默认值注册不会执行，导致 `uninitialized syspackage.DefaultCreatedAt` 错误。
+
+已在 `saas-zero-basedata/rpc/internal/svc/serviceContext.go` 中导入：
+
+```go
+import _ "github.com/saas-zero/saas-zero-basedata/ent/runtime"
+```
+
+新增服务也要确保添加此行。
+
+## 系统初始化 API
+
+当 auth 服务尚未就绪时，可通过初始化 API 创建系统基础数据。这些 API 硬编码 `userId=1, userName=system, tenantId=1`，通过 gRPC metadata 传给基于 data 服务。
+
+| 路由 | Method | 用途 |
+|---|---|---|
+| `/init/all` | POST | 一键全量初始化（推荐） |
+| `/init/package/create` | POST | 创建套餐 |
+| `/init/tenant/create` | POST | 创建租户 |
+| `/init/user/create` | POST | 创建用户 |
+| `/init/role/create` | POST | 创建角色 |
+
+`POST /init/all` 在一个 ent 事务中完成：清理旧通配 API → 创建 API 目录/接口（来自 `api_seed.go` 的 `seedApiGroups`）→ 菜单（含 button 权限码）→ 套餐 → 租户 → 角色 → 部门 → 用户 → Casbin 策略，提交事务后写入 Casbin 策略。
+
+**幂等刷新：** 除"不存在时创建"外，标准套餐（code=standard）每轮都会 `ClearMenus().AddMenuIDs(全部菜单含按钮).ClearApis().AddAPIIDs(全部 API)`，保证新租户从套餐继承时按钮齐全；default 租户 admin 角色同样每轮 `ClearMenus().AddMenuIDs(全部菜单)`。
+
+### 实现原理
+
+1. **API 层**（`api/internal/logic/initLogic.go`）构造时调用 `initCtx()`，设置 gRPC metadata：
+   ```go
+   metadata.Pairs("x-user-id", "1", "x-user-name", "system", "x-tenant-id", "1")
+   ```
+2. **RPC 层**（`rpc/basedataService.go:authInterceptor`）接收 metadata，注入 context：
+   ```go
+   ctx = mixins.SetCurrentUserId(ctx, id)
+   ctx = mixins.SetCurrentUserName(ctx, name)
+   ctx = mixins.SetCurrentTenantId(ctx, tid)
+   ```
+3. **Mixin Hook** 从 context 读取值，自动设置 audit 字段。
+
+**注意：** `/init/*` 路由在内置 JWT 中间件中跳过认证，同时基于 data API 的 Casbin 中间件也跳过它们，保证系统初始化流程不受权限拦截。
+
+### gRPC 拦截器注册
+
+拦截器通过 `server.AddUnaryInterceptors()` 注册：
+
+```go
+s := zrpc.MustNewServer(c.RpcServerConf, func(grpcServer *grpc.Server) { ... })
+s.AddUnaryInterceptors(authInterceptor)
+```
+
+## 通用工具类
+
+| 包 | 功能 | 依赖 | 关键配置 |
+|---|---|---|---|
+| `common/pkg/bcrypt` | 密码 `Hash` / `Verify` | `golang.org/x/crypto` | 无 |
+| `common/pkg/jwt` | JWT `Sign` / `Parse`，携带 `userId`/`tenantId`/`userName`/`roleCodes`/`tokenVersion` | `github.com/golang-jwt/jwt/v5` | 签名密钥调用方传入 |
+| `common/pkg/crypto` | AES-GCM `EncryptString` / `DecryptString`（手机号等敏感字段脱敏） | 纯标准库 | 环境变量 `ENCRYPT_KEY`（32字节 hex 或任意字符串，不足补0，超过截断） |
+| `common/pkg/casbin` | Casbin Domain RBAC `NewEnforcer` + PostgreSQL adapter | `github.com/casbin/casbin/v2` | 数据库连接串通过 sql.Open 传入 |
+| `common/pkg/snowflake` | 雪花 ID 生成 `NextID()` | 纯标准库 | 环境变量 `SNOWFLAKE_WORKER_ID`（默认 0） |
+| `common/pkg/errno` | 统一业务错误码 `Errno{Code,Msg}` | 无 | 预定义 Success/InvalidParam/Forbidden/TokenExpired 等 |
+| `common/pkg/id` | `ToString` / `Parse` 等 int64 ↔ string 转换 | 无 | 前端精度无损 |
+| `common/pkg/pagination` | `Normalize(page,size)` 分页标准化 | 无 | 默认 page=1, size=20, max=100 |
+| `common/pkg/redis` | `NewClient` + Get/Setex/Exists/Incr/Del | go-zero / go-redis | DB==0 走 go-zero Redis |
+| `common/pkg/captcha` | `Generate()` 生成 base64 数字验证码 | base64Captcha | 内存 store |
+| `common/pkg/envconf` | 环境变量覆盖配置项 `String(key, fallback)` | 无 | 生产覆盖 JWT/DSN/Redis |
+| `common/pkg/timex` | `FormatUnix` / `FormatUnixLayout` 时间格式化 | 无 | 兼容秒/毫秒 |
+
+## 常用命令速查
+
+| 命令 | 说明 | 执行目录 |
+|---|---|---|
+| `go generate ./ent` | 根据 schema 生成 ent CRUD 代码 | `saas-zero-basedata` |
+| `goctl api go -api xxx.api -dir . -style goZero` | 根据 .api 文件生成 HTTP 代码（驼峰命名） | 对应 app 目录 |
+| `goctl rpc protoc xxx.proto --go_out=. --go-grpc_out=. --zrpc_out=. -m --style goZero` | 生成 gRPC 代码（**全量生成，会覆盖逻辑**） | `saas-zero-basedata/rpc` |
+| `protoc --go_out=. --go-grpc_out=. xxx.proto` | **仅**生成 proto message + gRPC stub（不覆盖逻辑） | `saas-zero-basedata/rpc` |
+| `go build ./apps/saas-zero-xxx/...` | 从 workspace 根编译指定服务（仅限已纳入 `go.work` 的模块） | `saas-zero/` (workspace 根) |
+| `GOWORK=off go build ./...` | 编译未纳入 `go.work` 的模块（job / file / gen，需先 `go mod tidy`） | 对应模块目录 |
+| `go run .` 或 `go run xxx.go` | 启动服务（配置 `etc/*.yaml` 相对运行目录，需在 rpc/ 或 api/ 子目录内执行） | 对应 app 目录 |
+
+## 目录功能速览
+
+```
+saas-zero-basedata/
+├── ent/schema/           → 数据库表定义 (核心，手动编写)
+├── ent/                  → SQL CRUD 代码 (生成，勿手动修改)
+├── ent/migrate/          → DDL 迁移代码 (生成)
+├── api/
+│   ├── internal/
+│   │   ├── handler/      → HTTP 处理器 (goctl 生成)
+│   │   ├── logic/        → API 业务逻辑 (手动编写，调 gRPC)
+│   │   ├── middleware/   → JWT + Casbin 中间件 (手动)
+│   │   ├── svc/          → 服务上下文 (gRPC Client + Casbin Enforcer)
+│   │   ├── types/        → HTTP 类型定义 (goctl 生成)
+│   │   └── config/       → API 配置
+│   └── etc/              → API YAML 配置
+├── rpc/
+│   ├── apps/             → Protobuf + gRPC 代码 (生成)
+│   ├── internal/
+│   │   ├── logic/        → RPC 业务逻辑 (手动编写，查 DB)
+│   │   ├── server/       → gRPC 服务注册 (生成)
+│   │   ├── svc/          → 服务上下文 (ent Client + Casbin Enforcer)
+│   │   └── config/       → RPC 配置
+│   └── etc/              → RPC YAML 配置
+│
+saas-zero-common/
+└── pkg/
+    ├── ent/mixins/       → 可复用的混入字段定义
+    ├── snowflake/        → 雪花 ID 生成器
+    ├── bcrypt/           → 密码哈希与验证
+    ├── jwt/              → JWT 签名与解析 (含 roleCodes/tokenVersion)
+    ├── crypto/           → AES-GCM 加解密
+    ├── casbin/           → Casbin Domain RBAC + PostgreSQL adapter
+    ├── errno/            → 统一业务错误码
+    ├── id/               → int64 ↔ string 转换
+    ├── pagination/       → 分页参数标准化
+    ├── redis/            → Redis 客户端封装
+    ├── captcha/          → 图形验证码
+    └── timex/            → 时间格式化工具
+```
+
+### Casbin 策略自动重载
+
+基于 data API 的 `serviceContext.go` 在启动后启动 goroutine，每 30 秒调用 `enf.LoadPolicy()` 从数据库重新加载 Casbin 策略。这样 RPC 层通过 `AssignApis` 更新的策略最迟 30 秒内生效，无需重启服务。
+
+## 多租户登录流程
+
+```
+客户端 → POST /oauth/login {"tenantCode":"default","username":"admin","password":"***","captchaId":"...","captchaVal":"..."}
+     │
+     ├─ 1. Auth 服务接收请求，解析 tenantCode
+     │      │ （可选）验证码：若传 captchaId，查 Redis captcha:<id> 比对后删除
+     │
+     ├─ 2. gRPC → basedata-rpc: GetTenantByCode("default") → tenant{id, name, ...}
+     │      ↑ 将 tenantId 注入 gRPC metadata x-tenant-id
+     │
+     ├─ 3. gRPC → basedata-rpc: GetUserByUsername(tenantId, "admin") → user{...}
+     │      ↑ 根据租户隔离查询该租户下的用户
+     │      ├─ 锁定预检: lockout_until > now → 1007 AccountLocked
+     │      └─ 状态检查: status != active → 1008 AccountDisabled
+     │
+     ├─ 4. bcrypt.Verify(password, user.Password)
+     │      └─ 失败 → RecordLoginResult(status=fail) 递增 login_error_count，
+     │          连续 5 次失败锁定 30 分钟 (lockout_until)
+     │
+     ├─ 5. 成功 → RecordLoginResult(status=success) 清零错误计数 + 写登录日志 + 更新 login_ip/login_at
+     │
+     ├─ 6. gRPC → basedata-rpc: GetUserRoleCodes(userId) → roleCodes（写入 JWT 供 Casbin 免额外调用）
+     │
+     └─ 7. jwt.Sign({ userId, tenantId, userName, roleCodes, tokenVersion }) → JWT token
+            ↑ Redis 写入 token:<jti> + token_version:<userId>
+```
+
+- `sys_users.username` 字段不再全局唯一，改为 `(tenant_id, username)` 联合唯一索引，不同租户可存在同名用户
+- `sys_users.dept_id` 和 `sys_depts.leader_id` 使用 `Optional()` 无默认值，NULL 表示"未分配"
+
+## 当前数据库表清单（11 业务 + 4 关联 + 1 策略）
+
+### 业务表
+
+| 表 | Mixin 组合 | 说明 |
+|---|---|---|
+| `sys_users` | Base + Tenant(必填) + Created + Updated + Deleted + Status + Remark | 用户（含 login_error_count/lockout_until 登录锁定） |
+| `sys_tenants` | Base + Created + Updated + Deleted + Status + Remark | 租户（无 TenantMixin，含 admin_id/package_id/parent_id/parent_name） |
+| `sys_roles` | Base + Tenant(必填) + Created + Updated + Deleted + Status + Sort + Remark | 角色（含 is_system 系统角色标志） |
+| `sys_menus` | Base + Created + Updated + Deleted + Status + Remark + Sort | 菜单（无 TenantMixin，含 menu_type=directory/menu/button） |
+| `sys_depts` | Base + Tenant(必填) + Created + Updated + Deleted + Status + Sort | 部门（含 parent_id/parent_name/leader_id） |
+| `sys_apis` | Base + Created + Updated + Deleted + Status + Remark | API 目录（无 TenantMixin，api_type=group/api） |
+| `sys_dicts` | Base + Tenant(可选) + Created + Updated + Deleted + Status + Remark | 字典 |
+| `sys_dict_datas` | Base + Tenant(可选) + Created + Updated + Deleted + Status + Remark | 字典数据 |
+| `sys_packages` | Base + Created + Updated + Deleted + Status + Sort + Remark | 套餐（无 TenantMixin） |
+| `sys_login_logs` | Base + 自建 tenant_id 业务字段 | 登录日志（user_id/username/ip/status/message/login_time） |
+| `sys_operation_logs` | Base + 自建 audit 字段 | 操作日志（module/operation/method/path/params/result/status/duration/ip/user_agent/operator_id/operator_name/tenant_id/created_at） |
+
+### M:N 关联表（ent 自动生成，无需手写 schema）
+
+| 表 | 关联 | 说明 |
+|---|---|---|
+| `sys_user_roles` | SysUser ↔ SysRole | 用户-角色 |
+| `sys_role_menus` | SysRole ↔ SysMenu | 角色-菜单 |
+| `sys_package_menus` | SysPackage ↔ SysMenu | 套餐-菜单 |
+| `sys_package_apis` | SysPackage ↔ SysApi | 套餐-API |
+
+### Casbin 策略
+
+| 表 | Mixin 组合 | 说明 |
+|---|---|---|
+| `casbin_rule` | Casbin 自动管理 (非 ent) | Casbin 策略存储 |
+
+## 启动顺序
+
+```bash
+# 从本仓库根目录执行
+
+# 1. etcd (需提前启动，默认 127.0.0.1:2379)
+
+# 2. basedata RPC (gRPC 服务)
+go run ./apps/saas-zero-basedata/rpc
+
+# 3. basedata API (HTTP 接口，含 JWT/Casbin 中间件)
+go run ./apps/saas-zero-basedata/api
+
+# 4. auth 服务 (OAuth 登录)
+go run ./apps/saas-zero-auth/api
+
+# 5. gateway (统一入口 :18080)
+go run ./apps/saas-zero-gateway
+
+# 6. job RPC + job API (定时任务与调度器 :18085 / :18086)
+#    job 未纳入 go.work，需在各自目录内以 GOWORK=off 运行（或先执行 go work use ./apps/saas-zero-job）
+#    注意：配置路径 etc/*.yaml 相对运行目录，必须在 rpc/ 与 api/ 子目录内启动
+cd apps/saas-zero-job/rpc && GOWORK=off go run .
+cd apps/saas-zero-job/api && GOWORK=off go run .
+```
+
+## 网关路由表
+
+### Auth 服务 → `:18081`
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/oauth/login` | 登录 (验证码可选 + bcrypt 验证 + 锁定检查 + JWT 签发 + 登录日志) |
+| GET | `/oauth/verify` | 令牌验证 |
+| POST | `/oauth/refresh` | 令牌刷新 |
+| GET | `/oauth/userinfo` | 当前用户信息 |
+| GET | `/oauth/menus` | 用户菜单树 |
+| GET | `/oauth/permissions` | 用户权限标识 |
+| POST | `/oauth/password/change` | 修改密码 |
+| POST | `/oauth/password/reset` | 重置他人密码 |
+| GET | `/oauth/code` | 图形验证码 (base64) |
+
+### 基于 data API → `:18083`
+
+| 资源 | 方法:路径 | 说明 |
+|---|---|---|
+| 用户 | `POST /system/user/create` | |
+| | `POST /system/user/update` | body: 用户 JSON (非 PUT) |
+| | `POST /system/user/delete` | body: `{ ids: [...] }` |
+| | `GET /system/user/list` | Query: page, size, username, nickname, mobile, status, deptId |
+| | `GET /system/user/detail` | Query: id |
+| | `POST /system/user/resetPassword` | |
+| | `POST /system/user/assignRoles` | |
+| 角色 | `POST /system/role/create` | |
+| | `POST /system/role/update` | body: 角色 JSON (非 PUT) |
+| | `POST /system/role/delete` | body: `{ ids: [...] }` |
+| | `GET /system/role/list` | Query: page, size, name, code, status |
+| | `GET /system/role/detail` | Query: id |
+| | `POST /system/role/assignMenus` | |
+| | `POST /system/role/assignApis` | 写入 Casbin 策略 |
+| 菜单 | `POST /system/menu/create` | |
+| | `POST /system/menu/update` | |
+| | `POST /system/menu/delete` | body: `{ ids: [...] }` |
+| | `GET /system/menu/list` | |
+| | `GET /system/menu/detail` | Query: id |
+| | `GET /system/menu/tree` | |
+| | `GET /system/menu/routers` | |
+| 部门 | `POST /system/dept/create` | |
+| | `POST /system/dept/update` | |
+| | `POST /system/dept/delete` | body: `{ ids: [...] }` |
+| | `GET /system/dept/list` | |
+| | `GET /system/dept/detail` | Query: id |
+| | `GET /system/dept/tree` | |
+| 字典 | `POST /system/dict/create` | |
+| | `POST /system/dict/update` | |
+| | `POST /system/dict/delete` | body: `{ ids: [...] }` |
+| | `GET /system/dict/list` | |
+| | `GET /system/dict/detail` | Query: id |
+| 字典数据 | `POST /system/dictData/create` | |
+| | `POST /system/dictData/update` | |
+| | `POST /system/dictData/delete` | body: `{ ids: [...] }` |
+| | `GET /system/dictData/list` | |
+| | `GET /system/dictData/detail` | Query: id |
+| | `GET /system/dictData/byDictKey` | |
+| 租户 | `POST /system/tenant/create` | |
+| | `POST /system/tenant/update` | |
+| | `POST /system/tenant/delete` | body: `{ ids: [...] }` |
+| | `GET /system/tenant/list` | |
+| | `GET /system/tenant/detail` | Query: id |
+| | `POST /system/tenant/changeStatus` | |
+| | `GET /system/tenant/users` | 租户下用户列表（选管理员用） |
+| 套餐 | `POST /system/package/create` | |
+| | `POST /system/package/update` | |
+| | `POST /system/package/delete` | body: `{ ids: [...] }` |
+| | `GET /system/package/list` | |
+| | `GET /system/package/detail` | Query: id |
+| | `POST /system/package/assignMenus` | 套餐-菜单关联（权限模板） |
+| | `POST /system/package/assignApis` | 套餐-API 关联（权限模板） |
+| API | `POST /system/api/create` | |
+| | `POST /system/api/update` | |
+| | `POST /system/api/delete` | body: `{ ids: [...] }` |
+| | `GET /system/api/list` | |
+| | `GET /system/api/mine` | 当前登录用户自己的 API（分配 API 弹窗数据源，Casbin 放行） |
+| | `GET /system/api/detail` | Query: id |
+| 日志 | `GET /system/log/loginLog/list` | |
+| | `GET /system/log/operationLog/list` | |
+| 初始化 | `POST /init/all` | 跳过认证 |
+| | `POST /init/package/create` | 跳过认证 |
+| | `POST /init/tenant/create` | 跳过认证 |
+| | `POST /init/user/create` | 跳过认证 |
+| | `POST /init/role/create` | 跳过认证 |
+
+## 前端项目 `saas-zero-web`
+
+### 技术栈
+- React 19 + Ant Design Pro (Full 模板) + Umi v4.3.24
+- TypeScript, Biome (@biomejs/biome)
+- 国际化 react-intl (umi 内置 `useIntl`)
+- 路由: `config/routes.ts` 定义所有 SaaS-Zero 页面
+- token 存储: `sessionStorage` 键 `saas-zero-token`
+- 综合说明见 `saas-zero-web/README.md`，代码架构见 `saas-zero-web/AGENTS.md`
+
+### 页面完成情况
+
+| 页面 | 状态 | 功能 |
+|---|---|---|
+| 登录 | ✅ | 双栏布局 + 验证码 + JWT 登录，登录后**重新拉取该用户菜单**并写入 `menuData` |
+| 控制台 | ✅ | 真实数据统计卡片 + 最近操作日志 |
+| 用户管理 | ✅ | CRUD + 批量删除 + 重置密码 + 分配角色 |
+| 角色管理 | ✅ | CRUD + 分配菜单(Tree) + 分配API(Tree) |
+| 菜单管理 | ✅ | TreeTable CRUD + 图标选择器 |
+| 部门管理 | ✅ | TreeTable CRUD + 添加下级 |
+| 字典管理 | ✅ | 左右双栏 + 字典/字典数据 CRUD |
+| 租户管理 | ✅ | ProTable CRUD + 套餐选择 + 管理员选择 |
+| 套餐管理 | ✅ | 卡片布局 CRUD + 分配菜单/API |
+| API管理 | ✅ | 树形 ProTable CRUD + 方法 Tag |
+| 登录日志 | ✅ | ProTable 只读查询 |
+| 操作日志 | ✅ | ProTable 只读查询 |
+| 系统初始化 | ✅ | Steps 向导 + 一键初始化 |
+| 个人中心 | ✅ | 资料编辑 + 修改密码 |
+| 权限控制 | ✅ | 路由访问跟随后端菜单 `menuData` + 按钮级 usePermission |
+| 多标签页 | ✅ | PageTabs + 右键菜单 |
+| 国际化 | ✅ | 全部走 i18n (zh-CN + en-US) |
+
+### 前端菜单/路由访问（菜单驱动）
+
+- `getInitialState()`（`app.tsx`）调用 `/oauth/menus` → `buildLayoutMenu()` 转成 ProLayout menuData（`src/utils/menu.ts`，过滤 button 节点）
+- **登录页 `login/index.tsx` 在登录成功后重新 `getMenus()` 并 `setInitialState({ currentUser, menuData })`**——`getInitialState` 只在应用启动时执行一次，不重拉会导致切换用户后左侧菜单仍是旧用户的
+- `access.ts` 页面级访问 `hasMenu(path)` **跟随后端菜单**：后端下发了某菜单（如 `/log`）即可进入页面；按钮码只用于页面内按钮显隐
+- 分配菜单/API 弹窗数据源：`/system/menu/tree`（同 GetMenuTree，限自己角色并集）、`/system/api/mine`（GetMyApis，Casbin 放行）
+
+### 开发启动
+```bash
+cd saas-zero-web
+npx max dev
+# → http://localhost:8000
+```
+
+### 代理配置 (`config/proxy.ts`)
+- `/oauth/*` → `http://127.0.0.1:18080` (经过 gateway)
+- `/system/*` → `http://127.0.0.1:18080` (经过 gateway)
+- `/init/*` → `http://127.0.0.1:18080` (经过 gateway)
+
+### API 请求格式
+所有 delete 接口使用 `POST` + body `{ "ids": [id1, id2] }` (IdsReq)
+所有 assign 接口使用 `POST` + body `{ "id": roleId, "menuIds": [...] }` 等
+
+## 文档维护约定
+
+### 面向读者与写法
+
+- 以「读懂架构、上手启动」为目标；先讲为什么（设计动机），再讲怎么做（关键机制与调用链）
+- 架构 ASCII 图保持与代码仓库一致；截图放在 `doc/images/` 并以相对路径引用
+- 改代码前先检查本文「关键事实基线」是否需要同步更新
+
+### 敏感信息红线
+
+- **严禁**出现内网 IP、Windows 绝对路径、真实数据库密码 / 连接串、真实密钥
+- 示例一律使用 `127.0.0.1` / `localhost`
+
+### 关键事实基线
+
+- **端口**：gateway `:18080`、auth `:18081`、basedata API `:18083`、basedata RPC `:18084`、job RPC/API `:18085`/`:18086`、file RPC/API `:18090`/`:18091`、gen RPC/API `:18092`/`:18093`
+- **接口规模**：认证 9 + 基础数据 65（60 业务 + 5 初始化）+ 文件 4 + 代码生成 8 + 定时任务 11 = **97**，全部经 gateway 访问（file / gen 尚未接入网关）
+- **请求方法**：基础数据与 job 的 update / delete 一律 `POST`（delete 传 `{ids: [...]}`）；file / gen 用标准 REST 动词
+- **权限**：菜单走 `sys_role_menus`（前端导航），API 走 Casbin Domain RBAC（`casbin_rule` 表）；**继承式授权**（只能授出自己拥有的权限）
+- **会话**：JWT + Redis `tokenVersion`（改密 / 重配权限后旧 token 立即失效）
+- **ID**：雪花 ID，返回前端用 string 双字段（`id` + `idStr`）
+- **数据库**：16 业务表 + 4 M:N 关联表 + 1 Casbin 策略表，ent 自动迁移建表
+- **数据隔离**：行级 `tenant_id`；字典继承模式 `tenant_id=0` 表示系统默认
+- **初始化**：全新环境 `POST /init/all` 一键初始化（幂等可重跑）
+
+### 模块 README 模板
+
+各模块 `README.md` 采用统一三段式（中文，简短）：
 
 ```markdown
 # <模块名>
 
 基于 go-zero 构建的多租户微服务版本 —— <一句话职责>
-
-地址：https://github.com/saas-zero/<repo>
 
 ## 职责
 - <核心功能点>

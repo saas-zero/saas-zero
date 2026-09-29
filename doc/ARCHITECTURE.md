@@ -42,8 +42,13 @@
 | **auth** | HTTP API + gRPC client | `:18081` | 登录认证（验证码/bcrypt/锁定检查）、JWT 签发、令牌验证/刷新、用户信息/菜单/权限查询 |
 | **basedata API** | HTTP API + gRPC client | `:18083` | 对外暴露 CRUD 接口、JWT 解析注入、Casbin 运行时权限校验、写操作日志、调 RPC |
 | **basedata RPC** | gRPC server | `:18084` | 核心业务逻辑、Ent DB 操作、Casbin 策略管理、自动审计字段填充 |
+| **job** | HTTP API + gRPC server | `:18086` / `:18085` | 定时任务 CRUD / 启停 / 立即执行 / 执行日志；独立 ent schema 与库，内嵌 cron 调度器回写 `next_run_at` |
+| **file** | HTTP API + gRPC server | `:18091` / `:18090` | 文件上传 / 列表 / 详情 / 删除；独立 ent schema 与库（尚未接入网关） |
+| **gen** | HTTP API + gRPC server | `:18093` / `:18092` | 代码生成：库表导入 / 预览 / 生成；独立 ent schema 与库（尚未接入网关） |
 
 **设计原则：** Gateway 是唯一对外暴露的节点，auth 和 basedata API 只对 gateway 开放（内网访问）。所有租户隔离、权限判定收敛在 basedata API（HTTP 层）完成。
+
+**独立服务：** `job` / `file` / `gen` 为平台级服务，各自持有独立 ent schema 与数据库，不经过 basedata；job 已接入网关（`/system/job/*`），file / gen 尚未接入（需直连端口访问）。
 
 ### 通信方式
 
@@ -136,17 +141,22 @@ apis, err := client.SysApi.Query().All(ctx)
 
 ```
 1. 用户 → POST /oauth/login {tenantCode, username, password, captchaId?, captchaVal?} → Auth 服务
-2. Auth → gRPC GetTenantByCode(tenantCode) → 确定租户（顺带校验）
+   （可选）验证码：若传 captchaId，查 Redis captcha:<id> 比对后删除
+2. Auth → gRPC GetTenantByCode(tenantCode) → 确定租户（顺带校验存在性）
 3. Auth → gRPC GetUserByUsername(tenantId, username) → 租户隔离查用户
-4. 锁定/状态预检：lockout_until > now → 账号锁定；status != active → 账号禁用
-5. Auth → bcrypt.Verify 密码（失败累计 5 次锁定 30 分钟）
+   ├─ 锁定预检：lockout_until > now → AccountLocked
+   └─ 状态检查：status != active → AccountDisabled
+4. Auth → bcrypt.Verify 密码（失败 → 递增 login_error_count，连续 5 次锁定 30 分钟）
+5. Auth → RecordLoginResult（成功/失败写登录日志；成功清零错误计数）
 6. Auth → gRPC GetUserRoleCodes(userId) → roleCodes
 7. Auth → 生成 JWT（含 userId, tenantId, userName, roleCodes, tokenVersion）
 8. Redis 写入 token:<jti> + token_version:<userId>
-9. 返回 JWT 给前端；写登录日志
+9. 返回 JWT 给前端
+10. 前端登录成功 → 重新 getMenus() 并 setInitialState({ currentUser, menuData })
+    （getInitialState 只在应用启动执行一次，登录后必须重拉菜单，否则切换用户后左侧菜单仍是旧用户的）
 ```
 
-> `sys_users.username` 不再全局唯一，改为 `(tenant_id, username)` 联合唯一索引，不同租户可存在同名用户。
+> `sys_users.username` 不再全局唯一，改为 `(tenant_id, username)` 联合唯一索引——不同租户可存在同名用户，登录时必须提供 `tenantCode` 区分。
 
 ### 授权数据流
 
@@ -164,9 +174,10 @@ apis, err := client.SysApi.Query().All(ctx)
                   │   ├─ tenantId = mixins.GetCurrentTenantId(ctx)
                   │   ├─ dom = strconv.FormatInt(tenantId, 10)
                   │   ├─ for each roleCode: enforcer.Enforce(roleCode, dom, path, method)
-                  │   └─ 全拒 → 403 Forbidden
+                  │   ├─ 全拒 → 403 Forbidden
+                  │   └─ /system/api/mine 放行：只返回当前登录用户自己的 API（自带隔离，JWT 仍保护）
                   │
-                  ├─ OperationLog 中间件 (非 GET 且非 /init/* 记录写操作日志)
+                  ├─ OperationLog 中间件 (非 GET 且非 /init/*，记录写操作)
                   │   └─ 异步调 gRPC CreateOperationLog → sys_operation_logs
                   │
                   └─ Logic → gRPC (context 已有 auth info)
@@ -232,17 +243,22 @@ CREATE TABLE casbin_rule (
 ### 权限数据结构
 
 ```
-sys_user ──── M:N ──── sys_role ──── M:N ──── sys_menu  (前端菜单权限，通过 ent edge 管理)
-                           │
+sys_user ──── M:N (sys_user_roles) ──── sys_role ──── M:N (sys_role_menus) ──── sys_menu  (前端菜单/按钮权限)
+                            │                                                    ↑ menu_type=button 的 path 即权限码
+                            │            ┌──── M:N (sys_package_menus) ──── sys_menu   (权限模板)
+                            │            └──── M:N (sys_package_apis)  ──── sys_api    (权限模板)
                       Casbin Policy (casbin_rule 表):      (API 运行时权限)
-                      p, roleCode, tenantId, path, method
-                           │
-                      sys_api  (API 资源目录，管理后台 UI 展示用，不影响鉴权)
+                      p, roleCode, tenantId, path, method, apiId
+                            │
+                       sys_api  (API 资源目录，精确 path+method，api_type=group/api)
 ```
 
 API 鉴权和菜单权限分离：
-- **API 权限**：通过 Casbin 策略管理，运行时由 middleware 拦截校验
+
+- **API 权限**：通过 Casbin 策略管理，运行时由 middleware 拦截校验（`sub=roleCode, dom=tenantId, obj=apiPath, act=method`）
 - **菜单权限**：通过 `sys_role_menus` 关联表（ent edge）管理，前端根据角色加载菜单树
+- **按钮权限**：button 类型菜单的 `path` 为权限码（如 `system:user:create`），由 `/oauth/permissions` 下发，前端 `usePermission().can(code)` 控制按钮显隐
+- **套餐**：`sys_package_menus` / `sys_package_apis` 作为权限模板；创建租户时自动生成 code=`admin` 的默认角色并继承套餐菜单/API（写 Casbin 策略）
 
 ### 继承式授权（只能授出自己拥有的权限）
 
@@ -322,8 +338,8 @@ SysTenant
     │       ├── M:N via sys_package_menus ──── SysMenu
     │       └── M:N via sys_package_apis ──── SysApi
     │
-    ├── SysLoginLog (无 tenant_id)
-    └── SysOperationLog (无 tenant_id)
+    ├── SysLoginLog (无 TenantMixin，自建 tenant_id 字段)
+    └── SysOperationLog (无 TenantMixin，自建 tenant_id 字段)
 ```
 
 ## 六、ID 精度处理
