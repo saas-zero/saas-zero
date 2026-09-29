@@ -1,0 +1,39 @@
+# job API 配置（HTTP，仅 Gateway 可达）
+Name: jobservice.api
+Host: 0.0.0.0
+Port: 18086
+Mode: dev
+Timeout: 10000
+
+Etcd:
+  Hosts:
+    - 192.168.201.81:32379
+  Key: jobservice.api
+
+JwtSecret: saas-zero-secret-key-2024
+
+Redis:
+  Host: 192.168.201.188:6379
+  Pass: "redis.123456"
+  Type: node
+  DB: 3
+
+CasbinPostgres:
+  DataSource: host=192.168.201.188 port=5432 user=postgres password=AM38xymTdFree4Fh dbname=saas_zero_kun sslmode=disable
+
+JobRpc:
+  Etcd:
+    Hosts:
+      - 192.168.201.81:32379
+    Key: jobservice.rpc
+  Timeout: 10000
+
+# 已注册的处理器列表（与 rpc/internal/task/handlers.go 保持一致）
+# 新增 handler 时在此处添加
+Handlers:
+  - Code: demo.hello
+    Name: Demo Hello
+  - Code: demo.delay
+    Name: Demo Delay
+  - Code: demo.fail
+    Name: Demo Fail

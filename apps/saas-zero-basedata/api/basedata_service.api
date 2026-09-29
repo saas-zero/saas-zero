@@ -1,0 +1,500 @@
+syntax = "v1"
+
+import "base_resp.api"
+
+type (
+	UserInfo {
+		Id          int64    `json:"id"`
+		IdStr       string   `json:"idStr"`
+		Username    string   `json:"username"`
+		Nickname    string   `json:"nickname"`
+		Mobile      string   `json:"mobile"`
+		Email       string   `json:"email"`
+		DeptId      int64    `json:"deptId"`
+		DeptIdStr   string   `json:"deptIdStr"`
+		DeptName    string   `json:"deptName"`
+		Status      string   `json:"status"`
+		Remark      string   `json:"remark"`
+		LoginIp     string   `json:"loginIp"`
+		LoginAt     string   `json:"loginAt"`
+		RoleIds     []string `json:"roleIds"`
+		RoleCodes   []string `json:"roleCodes"`
+		RoleNames   []string `json:"roleNames"`
+		TenantId    int64    `json:"tenantId"`
+		TenantIdStr string   `json:"tenantIdStr"`
+		CreatedAt   string   `json:"createdAt"`
+		CreatedBy   string   `json:"createdBy"`
+		UpdatedAt   string   `json:"updatedAt"`
+		UpdatedBy   string   `json:"updatedBy"`
+	}
+	UserReq {
+		Id       string   `json:"id,optional"`
+		Username string   `json:"username,optional"`
+		Password string   `json:"password,optional"`
+		Nickname string   `json:"nickname,optional"`
+		Mobile   string   `json:"mobile,optional"`
+		Email    string   `json:"email,optional"`
+		DeptId   string   `json:"deptId,optional"`
+		Status   string   `json:"status,optional"`
+		Remark   string   `json:"remark,optional"`
+		RoleIds  []string `json:"roleIds,optional"`
+	}
+	UserPageReq {
+		Page     int    `json:"page,optional" form:"page,optional"`
+		Size     int    `json:"size,optional" form:"pageSize,optional"`
+		Username string `json:"username,optional" form:"username,optional"`
+		Nickname string `json:"nickname,optional" form:"nickname,optional"`
+		Mobile   string `json:"mobile,optional" form:"mobile,optional"`
+		Status   string `json:"status,optional" form:"status,optional"`
+		DeptId   int64  `json:"deptId,optional" form:"deptId,optional"`
+	}
+	RoleInfo {
+		Id          int64   `json:"id"`
+		IdStr       string  `json:"idStr"`
+		Name        string  `json:"name"`
+		Code        string  `json:"code"`
+		Status      string  `json:"status"`
+		Sort        int32   `json:"sort"`
+		Remark      string  `json:"remark"`
+		TenantId    int64   `json:"tenantId"`
+		TenantIdStr string  `json:"tenantIdStr"`
+		MenuIds     []string `json:"menuIds"`
+		ApiIds      []string `json:"apiIds"`
+		CreatedAt   string  `json:"createdAt"`
+		CreatedBy   string  `json:"createdBy"`
+		UpdatedAt   string  `json:"updatedAt"`
+		UpdatedBy   string  `json:"updatedBy"`
+	}
+	RoleReq {
+		Id      string   `json:"id,optional"`
+		Name    string   `json:"name,optional"`
+		Code    string   `json:"code,optional"`
+		Status  string   `json:"status,optional"`
+		Sort    int32    `json:"sort,optional"`
+		Remark  string   `json:"remark,optional"`
+		MenuIds []string `json:"menuIds,optional"`
+		ApiIds  []string `json:"apiIds,optional"`
+	}
+	RolePageReq {
+		Page   int    `json:"page,optional" form:"page,optional"`
+		Size   int    `json:"size,optional" form:"pageSize,optional"`
+		Name   string `json:"name,optional" form:"name,optional"`
+		Code   string `json:"code,optional" form:"code,optional"`
+		Status string `json:"status,optional" form:"status,optional"`
+	}
+	DeptInfo {
+		Id          int64       `json:"id"`
+		IdStr       string      `json:"idStr"`
+		Name        string      `json:"name"`
+		ParentId    int64       `json:"parentId"`
+		ParentIdStr string      `json:"parentIdStr"`
+		LeaderId    int64       `json:"leaderId"`
+		LeaderIdStr string      `json:"leaderIdStr"`
+		LeaderName  string      `json:"leaderName"`
+		Mobile      string      `json:"mobile"`
+		Email       string      `json:"email"`
+		Status      string      `json:"status"`
+		Sort        int32       `json:"sort"`
+		TenantId    int64       `json:"tenantId"`
+		TenantIdStr string      `json:"tenantIdStr"`
+		Children    []*DeptInfo `json:"children"`
+		CreatedAt   string      `json:"createdAt"`
+		CreatedBy   string      `json:"createdBy"`
+		UpdatedAt   string      `json:"updatedAt"`
+		UpdatedBy   string      `json:"updatedBy"`
+	}
+	DeptReq {
+		Id       string `json:"id,optional"`
+		Name     string `json:"name,optional"`
+		ParentId string `json:"parentId,optional"`
+		LeaderId string `json:"leaderId,optional"`
+		Mobile   string `json:"mobile,optional"`
+		Email    string `json:"email,optional"`
+		Status   string `json:"status,optional"`
+		Sort     int32  `json:"sort,optional"`
+	}
+	DeptPageReq {
+		Page   int    `json:"page,optional" form:"page,optional"`
+		Size   int    `json:"size,optional" form:"pageSize,optional"`
+		Name   string `json:"name,optional" form:"name,optional"`
+		Status string `json:"status,optional" form:"status,optional"`
+	}
+	MenuInfo {
+		Id          int64       `json:"id"`
+		IdStr       string      `json:"idStr"`
+		MenuType    string      `json:"menuType"`
+		Name        string      `json:"name"`
+		ParentId    int64       `json:"parentId"`
+		ParentIdStr string      `json:"parentIdStr"`
+		Component   string      `json:"component"`
+		Path        string      `json:"path"`
+		Icon        string      `json:"icon"`
+		IsRedirect  bool        `json:"isRedirect"`
+		Redirect    string      `json:"redirect"`
+		Hidden      bool        `json:"hidden"`
+		Status      string      `json:"status"`
+		Sort        int32       `json:"sort"`
+		Remark      string      `json:"remark"`
+		Children    []*MenuInfo `json:"children"`
+		CreatedAt   string      `json:"createdAt"`
+		CreatedBy   string      `json:"createdBy"`
+		UpdatedAt   string      `json:"updatedAt"`
+		UpdatedBy   string      `json:"updatedBy"`
+	}
+	MenuReq {
+		Id         string `json:"id,optional"`
+		MenuType   string `json:"menuType,optional"`
+		Name       string `json:"name,optional"`
+		ParentId   string `json:"parentId,optional"`
+		Component  string `json:"component,optional"`
+		Path       string `json:"path,optional"`
+		Icon       string `json:"icon,optional"`
+		IsRedirect bool   `json:"isRedirect,optional"`
+		Redirect   string `json:"redirect,optional"`
+		Hidden     bool   `json:"hidden,optional"`
+		Status     string `json:"status,optional"`
+		Sort       int32  `json:"sort,optional"`
+		Remark     string `json:"remark,optional"`
+	}
+	MenuPageReq {
+		Page   int    `json:"page,optional" form:"page,optional"`
+		Size   int    `json:"size,optional" form:"pageSize,optional"`
+		Name   string `json:"name,optional" form:"name,optional"`
+		Status string `json:"status,optional" form:"status,optional"`
+	}
+	DictInfo {
+		Id          int64           `json:"id"`
+		IdStr       string          `json:"idStr"`
+		Name        string          `json:"name"`
+		Key         string          `json:"key"`
+		Status      string          `json:"status"`
+		Remark      string          `json:"remark"`
+		TenantId    int64           `json:"tenantId"`
+		TenantIdStr string          `json:"tenantIdStr"`
+		DictData    []*DictDataInfo `json:"dictData"`
+		CreatedAt   string          `json:"createdAt"`
+		CreatedBy   string          `json:"createdBy"`
+		UpdatedAt   string          `json:"updatedAt"`
+		UpdatedBy   string          `json:"updatedBy"`
+	}
+	DictReq {
+		Id     string `json:"id,optional" form:"id,optional"`
+		Name   string `json:"name,optional" form:"name,optional"`
+		Key    string `json:"key,optional" form:"key,optional"`
+		Status string `json:"status,optional" form:"status,optional"`
+		Remark string `json:"remark,optional" form:"remark,optional"`
+	}
+	DictPageReq {
+		Page   int    `json:"page,optional" form:"page,optional"`
+		Size   int    `json:"size,optional" form:"pageSize,optional"`
+		Name   string `json:"name,optional" form:"name,optional"`
+		Key    string `json:"key,optional" form:"key,optional"`
+		Status string `json:"status,optional" form:"status,optional"`
+	}
+	DictDataInfo {
+		Id          int64  `json:"id"`
+		IdStr       string `json:"idStr"`
+		DictId      int64  `json:"dictId"`
+		DictIdStr   string `json:"dictIdStr"`
+		Name        string `json:"name"`
+		Key         string `json:"key"`
+		Value       string `json:"value"`
+		Status      string `json:"status"`
+		Remark      string `json:"remark"`
+		TenantId    int64  `json:"tenantId"`
+		TenantIdStr string `json:"tenantIdStr"`
+		CreatedAt   string `json:"createdAt"`
+		CreatedBy   string `json:"createdBy"`
+		UpdatedAt   string `json:"updatedAt"`
+		UpdatedBy   string `json:"updatedBy"`
+	}
+	DictDataReq {
+		Id     string `json:"id,optional"`
+		DictId string `json:"dictId,optional"`
+		Name   string `json:"name,optional"`
+		Key    string `json:"key,optional"`
+		Value  string `json:"value,optional"`
+		Status string `json:"status,optional"`
+		Remark string `json:"remark,optional"`
+	}
+	DictDataPageReq {
+		Page   int    `json:"page,optional" form:"page,optional"`
+		Size   int    `json:"size,optional" form:"pageSize,optional"`
+		DictId int64  `json:"dictId,optional" form:"dictId,optional"`
+		Key    string `json:"key,optional" form:"key,optional"`
+		Value  string `json:"value,optional" form:"value,optional"`
+		Status string `json:"status,optional" form:"status,optional"`
+	}
+	TenantInfo {
+		Id           int64  `json:"id"`
+		IdStr        string `json:"idStr"`
+		Name         string `json:"name"`
+		Code         string `json:"code"`
+		AdminId      int64  `json:"adminId"`
+		AdminIdStr   string `json:"adminIdStr"`
+		AdminName    string `json:"adminName"`
+		ParentId     int64  `json:"parentId"`
+		ParentIdStr  string `json:"parentIdStr"`
+		PackageId    int64  `json:"packageId"`
+		PackageIdStr string `json:"packageIdStr"`
+		PackageName  string `json:"packageName"`
+		ExpiredAt    string `json:"expiredAt"`
+		Status       string `json:"status"`
+		Remark       string `json:"remark"`
+		CreatedAt    string `json:"createdAt"`
+		CreatedBy    string `json:"createdBy"`
+		UpdatedAt    string `json:"updatedAt"`
+		UpdatedBy    string `json:"updatedBy"`
+	}
+	TenantReq {
+		Id        string `json:"id,optional" form:"id,optional"`
+		Name      string `json:"name,optional" form:"name,optional"`
+		Code      string `json:"code,optional" form:"code,optional"`
+		AdminId   string `json:"adminId,optional" form:"adminId,optional"`
+		ParentId  string `json:"parentId,optional" form:"parentId,optional"`
+		PackageId string `json:"packageId,optional" form:"packageId,optional"`
+		ExpiredAt string `json:"expiredAt,optional" form:"expiredAt,optional"`
+		Status    string `json:"status,optional" form:"status,optional"`
+		Remark    string `json:"remark,optional" form:"remark,optional"`
+		Username  string `json:"username,optional" form:"username,optional"`
+		Password  string `json:"password,optional" form:"password,optional"`
+	}
+	TenantPageReq {
+		Page   int    `json:"page,optional" form:"page,optional"`
+		Size   int    `json:"size,optional" form:"pageSize,optional"`
+		Name   string `json:"name,optional" form:"name,optional"`
+		Code   string `json:"code,optional" form:"code,optional"`
+		Status string `json:"status,optional" form:"status,optional"`
+	}
+	PackageInfo {
+		Id        int64    `json:"id"`
+		IdStr     string   `json:"idStr"`
+		Name      string   `json:"name"`
+		Code      string   `json:"code"`
+		Status    string   `json:"status"`
+		Sort      int32    `json:"sort"`
+		Remark    string   `json:"remark"`
+		MenuIds   []string `json:"menuIds"`
+		ApiIds    []string `json:"apiIds"`
+		CreatedAt string `json:"createdAt"`
+		CreatedBy string `json:"createdBy"`
+		UpdatedAt string `json:"updatedAt"`
+		UpdatedBy string `json:"updatedBy"`
+	}
+	PackageReq {
+		Id      string   `json:"id,optional"`
+		Name    string   `json:"name,optional"`
+		Code    string   `json:"code,optional"`
+		Status  string   `json:"status,optional"`
+		Sort    int32    `json:"sort,optional"`
+		Remark  string   `json:"remark,optional"`
+		MenuIds []string `json:"menuIds,optional"`
+		ApiIds  []string `json:"apiIds,optional"`
+	}
+	PackagePageReq {
+		Page   int    `json:"page,optional" form:"page,optional"`
+		Size   int    `json:"size,optional" form:"pageSize,optional"`
+		Name   string `json:"name,optional" form:"name,optional"`
+		Code   string `json:"code,optional" form:"code,optional"`
+		Status string `json:"status,optional" form:"status,optional"`
+	}
+	ApiInfo {
+		Id        int64  `json:"id"`
+		IdStr     string `json:"idStr"`
+		ApiName   string `json:"apiName"`
+		ApiType   string `json:"apiType"`
+		ApiPath   string `json:"apiPath"`
+		ApiMethod string `json:"apiMethod"`
+		Status    string `json:"status"`
+		Remark    string `json:"remark"`
+		CreatedAt string `json:"createdAt"`
+		CreatedBy string `json:"createdBy"`
+		UpdatedAt string `json:"updatedAt"`
+		UpdatedBy string `json:"updatedBy"`
+	}
+	ApiReq {
+		Id        string `json:"id,optional" form:"id,optional"`
+		ApiName   string `json:"apiName,optional"`
+		ApiType   string `json:"apiType,optional"`
+		ApiPath   string `json:"apiPath,optional"`
+		ApiMethod string `json:"apiMethod,optional"`
+		Status    string `json:"status,optional" form:"status,optional"`
+		Remark    string `json:"remark,optional" form:"remark,optional"`
+	}
+	ApiPageReq {
+		Page    int    `json:"page,optional" form:"page,optional"`
+		Size    int    `json:"size,optional" form:"pageSize,optional"`
+		ApiName string `json:"apiName,optional" form:"apiName,optional"`
+		ApiPath string `json:"apiPath,optional" form:"apiPath,optional"`
+		ApiType string `json:"apiType,optional" form:"apiType,optional"`
+		Status  string `json:"status,optional" form:"status,optional"`
+	}
+)
+
+service SystemApis {
+	@handler CreateUserHandler
+	post /system/user/create (UserReq) returns (BaseResp)
+
+	@handler UpdateUserHandler
+	post /system/user/update (UserReq) returns (BaseResp)
+
+	@handler DeleteUserHandler
+	post /system/user/delete (IdsReq) returns (BaseResp)
+
+	@handler GetUserListHandler
+	get /system/user/list (UserPageReq) returns (BaseResp)
+
+	@handler GetUserDetailHandler
+	get /system/user/detail (IdReq) returns (BaseResp)
+
+	@handler ResetPasswordHandler
+	post /system/user/resetPassword (UserReq) returns (BaseResp)
+
+	@handler AssignRolesHandler
+	post /system/user/assignRoles (UserReq) returns (BaseResp)
+
+	@handler CreateRoleHandler
+	post /system/role/create (RoleReq) returns (BaseResp)
+
+	@handler UpdateRoleHandler
+	post /system/role/update (RoleReq) returns (BaseResp)
+
+	@handler DeleteRoleHandler
+	post /system/role/delete (IdsReq) returns (BaseResp)
+
+	@handler GetRoleListHandler
+	get /system/role/list (RolePageReq) returns (BaseResp)
+
+	@handler GetRoleDetailHandler
+	get /system/role/detail (IdReq) returns (BaseResp)
+
+	@handler AssignMenusHandler
+	post /system/role/assignMenus (RoleReq) returns (BaseResp)
+
+	@handler AssignApisHandler
+	post /system/role/assignApis (RoleReq) returns (BaseResp)
+
+	@handler CreateDeptHandler
+	post /system/dept/create (DeptReq) returns (BaseResp)
+
+	@handler UpdateDeptHandler
+	post /system/dept/update (DeptReq) returns (BaseResp)
+
+	@handler DeleteDeptHandler
+	post /system/dept/delete (IdsReq) returns (BaseResp)
+
+	@handler GetDeptListHandler
+	get /system/dept/list (DeptPageReq) returns (BaseResp)
+
+	@handler GetDeptDetailHandler
+	get /system/dept/detail (IdReq) returns (BaseResp)
+
+	@handler GetDeptTreeHandler
+	get /system/dept/tree returns (BaseResp)
+
+	@handler CreateMenuHandler
+	post /system/menu/create (MenuReq) returns (BaseResp)
+
+	@handler UpdateMenuHandler
+	post /system/menu/update (MenuReq) returns (BaseResp)
+
+	@handler DeleteMenuHandler
+	post /system/menu/delete (IdsReq) returns (BaseResp)
+
+	@handler GetMenuListHandler
+	get /system/menu/list (MenuPageReq) returns (BaseResp)
+
+	@handler GetMenuDetailHandler
+	get /system/menu/detail (IdReq) returns (BaseResp)
+
+	@handler GetMenuTreeHandler
+	get /system/menu/tree returns (BaseResp)
+
+	@handler GetMenuRoutersHandler
+	get /system/menu/routers returns (BaseResp)
+
+	@handler CreateDictHandler
+	post /system/dict/create (DictReq) returns (BaseResp)
+
+	@handler UpdateDictHandler
+	post /system/dict/update (DictReq) returns (BaseResp)
+
+	@handler DeleteDictHandler
+	post /system/dict/delete (IdsReq) returns (BaseResp)
+
+	@handler GetDictListHandler
+	get /system/dict/list (DictPageReq) returns (BaseResp)
+
+	@handler GetDictDetailHandler
+	get /system/dict/detail (IdReq) returns (BaseResp)
+
+	@handler CreateDictDataHandler
+	post /system/dictData/create (DictDataReq) returns (BaseResp)
+
+	@handler UpdateDictDataHandler
+	post /system/dictData/update (DictDataReq) returns (BaseResp)
+
+	@handler DeleteDictDataHandler
+	post /system/dictData/delete (IdsReq) returns (BaseResp)
+
+	@handler GetDictDataListHandler
+	get /system/dictData/list (DictDataPageReq) returns (BaseResp)
+
+	@handler GetDictDataDetailHandler
+	get /system/dictData/detail (IdReq) returns (BaseResp)
+
+	@handler GetDictDataByDictKeyHandler
+	get /system/dictData/byDictKey (DictReq) returns (BaseResp)
+
+	@handler CreateTenantHandler
+	post /system/tenant/create (TenantReq) returns (BaseResp)
+
+	@handler UpdateTenantHandler
+	post /system/tenant/update (TenantReq) returns (BaseResp)
+
+	@handler DeleteTenantHandler
+	post /system/tenant/delete (IdsReq) returns (BaseResp)
+
+	@handler GetTenantListHandler
+	get /system/tenant/list (TenantPageReq) returns (BaseResp)
+
+	@handler GetTenantDetailHandler
+	get /system/tenant/detail (IdReq) returns (BaseResp)
+
+	@handler ChangeTenantStatusHandler
+	post /system/tenant/changeStatus (TenantReq) returns (BaseResp)
+	get /system/tenant/users (TenantReq) returns (BaseResp)
+
+	@handler CreatePackageHandler
+	post /system/package/create (PackageReq) returns (BaseResp)
+
+	@handler UpdatePackageHandler
+	post /system/package/update (PackageReq) returns (BaseResp)
+
+	@handler DeletePackageHandler
+	post /system/package/delete (IdsReq) returns (BaseResp)
+
+	@handler GetPackageListHandler
+	get /system/package/list (PackagePageReq) returns (BaseResp)
+
+	@handler GetPackageDetailHandler
+	get /system/package/detail (IdReq) returns (BaseResp)
+	post /system/package/assignMenus (PackageReq) returns (BaseResp)
+	post /system/package/assignApis (PackageReq) returns (BaseResp)
+
+	@handler CreateApiHandler
+	post /system/api/create (ApiReq) returns (BaseResp)
+
+	@handler UpdateApiHandler
+	post /system/api/update (ApiReq) returns (BaseResp)
+
+	@handler DeleteApiHandler
+	post /system/api/delete (IdsReq) returns (BaseResp)
+
+	@handler GetApiListHandler
+	get /system/api/list (ApiPageReq) returns (BaseResp)
+
+	@handler GetApiDetailHandler
+	get /system/api/detail (IdReq) returns (BaseResp)
+}
+

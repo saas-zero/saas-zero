@@ -1,0 +1,698 @@
+syntax = "proto3";
+
+package basedata_service;
+
+option go_package = "./apps";
+
+message BaseResp {
+  int32 code = 1;
+  string msg = 2;
+  bytes data = 3;
+}
+
+message PageReq {
+  int32 page = 1;
+  int32 size = 2;
+}
+
+message PageResp {
+  repeated bytes list = 1;
+  int64 total = 2;
+}
+
+message IdReq {
+  int64 id = 1;
+}
+
+message IdsReq {
+  repeated int64 ids = 1;
+}
+
+message User {
+  optional int64 id = 1;
+  optional string idStr = 2;
+  optional string username = 3;
+  optional string nickname = 4;
+  optional string mobile = 5;
+  optional string email = 6;
+  optional int64 deptId = 7;
+  optional string deptIdStr = 8;
+  optional string deptName = 9;
+  optional string status = 10;
+  optional string remark = 11;
+  optional string loginIp = 12;
+  optional int64 loginAt = 13;
+  repeated int64 roleIds = 14;
+  repeated string roleCodes = 15;
+  repeated string roleNames = 16;
+  optional int64 tenantId = 17;
+  optional string tenantIdStr = 18;
+  optional int64 createdAt = 19;
+  optional string createdBy = 20;
+  optional int64 updatedAt = 21;
+  optional string updatedBy = 22;
+  optional string password = 23;
+  optional int32 loginErrorCount = 24;
+  optional int64 lockoutUntil = 25; // unix millis, 0/absent = 未锁定
+}
+
+// LoginRecordReq 用于登录后记录结果：更新锁定计数并写登录日志
+message LoginRecordReq {
+  optional int64 userId = 1;
+  optional string username = 2;
+  optional string ip = 3;
+  optional bool success = 4;
+  optional string message = 5;
+  optional int64 tenantId = 6;
+}
+
+message UserReq {
+  optional int64 id = 1;
+  optional string username = 2;
+  optional string password = 3;
+  optional string nickname = 4;
+  optional string mobile = 5;
+  optional string email = 6;
+  optional int64 deptId = 7;
+  optional string status = 8;
+  optional string remark = 9;
+  repeated int64 roleIds = 10;
+}
+
+message UserPageReq {
+  int32 page = 1;
+  int32 size = 2;
+  optional string username = 3;
+  optional string nickname = 4;
+  optional string mobile = 5;
+  optional string status = 6;
+  optional int64 deptId = 7;
+}
+
+message UserListResp {
+  int32 code = 1;
+  string msg = 2;
+  repeated User list = 3;
+  int64 total = 4;
+}
+
+message UserResp {
+  int32 code = 1;
+  string msg = 2;
+  optional User data = 3;
+}
+
+message Role {
+  optional int64 id = 1;
+  optional string idStr = 2;
+  optional string name = 3;
+  optional string code = 4;
+  optional string status = 5;
+  optional int32 sort = 6;
+  optional string remark = 7;
+  optional int64 tenantId = 8;
+  optional string tenantIdStr = 9;
+  repeated int64 menuIds = 10;
+  repeated int64 apiIds = 11;
+  optional int64 createdAt = 12;
+  optional string createdBy = 13;
+  optional int64 updatedAt = 14;
+  optional string updatedBy = 15;
+  optional bool isSystem = 16;
+}
+
+message RoleReq {
+  optional int64 id = 1;
+  optional string name = 2;
+  optional string code = 3;
+  optional string status = 4;
+  optional int32 sort = 5;
+  optional string remark = 6;
+  repeated int64 menuIds = 7;
+  repeated int64 apiIds = 8;
+}
+
+message RolePageReq {
+  int32 page = 1;
+  int32 size = 2;
+  optional string name = 3;
+  optional string code = 4;
+  optional string status = 5;
+}
+
+message RoleListResp {
+  int32 code = 1;
+  string msg = 2;
+  repeated Role list = 3;
+  int64 total = 4;
+}
+
+message RoleResp {
+  int32 code = 1;
+  string msg = 2;
+  optional Role data = 3;
+}
+
+message Dept {
+  optional int64 id = 1;
+  optional string idStr = 2;
+  optional string name = 3;
+  optional int64 parentId = 4;
+  optional string parentIdStr = 5;
+  optional int64 leaderId = 6;
+  optional string leaderIdStr = 7;
+  optional string leaderName = 8;
+  optional string mobile = 9;
+  optional string email = 10;
+  optional string status = 11;
+  optional int32 sort = 12;
+  optional int64 tenantId = 13;
+  optional string tenantIdStr = 14;
+  repeated Dept children = 15;
+  optional int64 createdAt = 16;
+  optional string createdBy = 17;
+  optional int64 updatedAt = 18;
+  optional string updatedBy = 19;
+  optional string parentName = 20;
+}
+
+message DeptReq {
+  optional int64 id = 1;
+  optional string name = 2;
+  optional int64 parentId = 3;
+  optional int64 leaderId = 4;
+  optional string mobile = 5;
+  optional string email = 6;
+  optional string status = 7;
+  optional int32 sort = 8;
+}
+
+message DeptPageReq {
+  int32 page = 1;
+  int32 size = 2;
+  optional string name = 3;
+  optional string status = 4;
+}
+
+message DeptListResp {
+  int32 code = 1;
+  string msg = 2;
+  repeated Dept list = 3;
+  int64 total = 4;
+}
+
+message DeptTreeResp {
+  int32 code = 1;
+  string msg = 2;
+  repeated Dept data = 3;
+}
+
+message DeptResp {
+  int32 code = 1;
+  string msg = 2;
+  optional Dept data = 3;
+}
+
+message Menu {
+  optional int64 id = 1;
+  optional string idStr = 2;
+  optional string menuType = 3;
+  optional string name = 4;
+  optional int64 parentId = 5;
+  optional string parentIdStr = 6;
+  optional string component = 7;
+  optional string path = 8;
+  optional string icon = 9;
+  optional bool isRedirect = 10;
+  optional string redirect = 11;
+  optional bool hidden = 12;
+  optional string status = 13;
+  optional int32 sort = 14;
+  optional string remark = 15;
+  repeated Menu children = 16;
+  optional int64 createdAt = 17;
+  optional string createdBy = 18;
+  optional int64 updatedAt = 19;
+  optional string updatedBy = 20;
+}
+
+message MenuReq {
+  optional int64 id = 1;
+  optional string menuType = 2;
+  optional string name = 3;
+  optional int64 parentId = 4;
+  optional string component = 5;
+  optional string path = 6;
+  optional string icon = 7;
+  optional bool isRedirect = 8;
+  optional string redirect = 9;
+  optional bool hidden = 10;
+  optional string status = 11;
+  optional int32 sort = 12;
+  optional string remark = 13;
+}
+
+message MenuPageReq {
+  int32 page = 1;
+  int32 size = 2;
+  optional string name = 3;
+  optional string status = 4;
+}
+
+message MenuListResp {
+  int32 code = 1;
+  string msg = 2;
+  repeated Menu list = 3;
+  int64 total = 4;
+}
+
+message MenuTreeResp {
+  int32 code = 1;
+  string msg = 2;
+  repeated Menu data = 3;
+}
+
+message MenuResp {
+  int32 code = 1;
+  string msg = 2;
+  optional Menu data = 3;
+}
+
+message Dict {
+  optional int64 id = 1;
+  optional string idStr = 2;
+  optional string name = 3;
+  optional string key = 4;
+  optional string status = 5;
+  optional string remark = 6;
+  optional int64 tenantId = 7;
+  optional string tenantIdStr = 8;
+  repeated DictData dictData = 9;
+  optional int64 createdAt = 10;
+  optional string createdBy = 11;
+  optional int64 updatedAt = 12;
+  optional string updatedBy = 13;
+}
+
+message DictData {
+  optional int64 id = 1;
+  optional string idStr = 2;
+  optional int64 dictId = 3;
+  optional string dictIdStr = 4;
+  optional string name = 5;
+  optional string key = 6;
+  optional string value = 7;
+  optional string status = 8;
+  optional string remark = 9;
+  optional int64 tenantId = 10;
+  optional string tenantIdStr = 11;
+  optional int64 createdAt = 12;
+  optional string createdBy = 13;
+  optional int64 updatedAt = 14;
+  optional string updatedBy = 15;
+}
+
+message DictReq {
+  optional int64 id = 1;
+  optional string name = 2;
+  optional string key = 3;
+  optional string status = 4;
+  optional string remark = 5;
+}
+
+message DictPageReq {
+  int32 page = 1;
+  int32 size = 2;
+  optional string name = 3;
+  optional string key = 4;
+  optional string status = 5;
+}
+
+message DictListResp {
+  int32 code = 1;
+  string msg = 2;
+  repeated Dict list = 3;
+  int64 total = 4;
+}
+
+message DictResp {
+  int32 code = 1;
+  string msg = 2;
+  optional Dict data = 3;
+}
+
+message DictDataReq {
+  optional int64 id = 1;
+  optional int64 dictId = 2;
+  optional string name = 3;
+  optional string key = 4;
+  optional string value = 5;
+  optional string status = 6;
+  optional string remark = 7;
+}
+
+message DictDataPageReq {
+  int32 page = 1;
+  int32 size = 2;
+  optional int64 dictId = 3;
+  optional string key = 4;
+  optional string value = 5;
+  optional string status = 6;
+}
+
+message DictDataListResp {
+  int32 code = 1;
+  string msg = 2;
+  repeated DictData list = 3;
+  int64 total = 4;
+}
+
+message DictDataResp {
+  int32 code = 1;
+  string msg = 2;
+  optional DictData data = 3;
+}
+
+message Tenant {
+  optional int64 id = 1;
+  optional string idStr = 2;
+  optional string name = 3;
+  optional string code = 4;
+  optional int64 adminId = 5;
+  optional string adminIdStr = 6;
+  optional int64 parentId = 7;
+  optional string parentIdStr = 8;
+  optional int64 packageId = 9;
+  optional string packageIdStr = 10;
+  optional string packageName = 11;
+  optional int64 expiredAt = 12;
+  optional string status = 13;
+  optional string remark = 14;
+  optional int64 createdAt = 15;
+  optional string createdBy = 16;
+  optional int64 updatedAt = 17;
+  optional string updatedBy = 18;
+  optional string adminName = 19;
+  optional string parentName = 20;
+}
+
+message TenantReq {
+  optional int64 id = 1;
+  optional string name = 2;
+  optional string code = 3;
+  optional int64 adminId = 4;
+  optional int64 parentId = 5;
+  optional int64 packageId = 6;
+  optional int64 expiredAt = 7;
+  optional string status = 8;
+  optional string remark = 9;
+  optional string username = 10;
+  optional string password = 11;
+}
+
+message TenantPageReq {
+  int32 page = 1;
+  int32 size = 2;
+  optional string name = 3;
+  optional string code = 4;
+  optional string status = 5;
+}
+
+message TenantListResp {
+  int32 code = 1;
+  string msg = 2;
+  repeated Tenant list = 3;
+  int64 total = 4;
+}
+
+message TenantResp {
+  int32 code = 1;
+  string msg = 2;
+  optional Tenant data = 3;
+}
+
+message Package {
+  optional int64 id = 1;
+  optional string idStr = 2;
+  optional string name = 3;
+  optional string code = 4;
+  optional string status = 5;
+  optional int32 sort = 6;
+  optional string remark = 7;
+  optional int64 createdAt = 8;
+  optional string createdBy = 9;
+  optional int64 updatedAt = 10;
+  optional string updatedBy = 11;
+  repeated int64 menuIds = 12;
+  repeated int64 apiIds = 13;
+}
+
+message PackageReq {
+  optional int64 id = 1;
+  optional string name = 2;
+  optional string code = 3;
+  optional string status = 4;
+  optional int32 sort = 5;
+  optional string remark = 6;
+  repeated int64 menuIds = 7;
+  repeated int64 apiIds = 8;
+}
+
+message PackagePageReq {
+  int32 page = 1;
+  int32 size = 2;
+  optional string name = 3;
+  optional string code = 4;
+  optional string status = 5;
+}
+
+message PackageListResp {
+  int32 code = 1;
+  string msg = 2;
+  repeated Package list = 3;
+  int64 total = 4;
+}
+
+message PackageResp {
+  int32 code = 1;
+  string msg = 2;
+  optional Package data = 3;
+}
+
+message Api {
+  optional int64 id = 1;
+  optional string idStr = 2;
+  optional string apiName = 3;
+  optional string apiType = 4;
+  optional string apiPath = 5;
+  optional string apiMethod = 6;
+  optional string status = 7;
+  optional string remark = 8;
+  optional int64 createdAt = 9;
+  optional string createdBy = 10;
+  optional int64 updatedAt = 11;
+  optional string updatedBy = 12;
+}
+
+message ApiReq {
+  optional int64 id = 1;
+  optional string apiName = 2;
+  optional string apiType = 3;
+  optional string apiPath = 4;
+  optional string apiMethod = 5;
+  optional string status = 6;
+  optional string remark = 7;
+}
+
+message ApiPageReq {
+  int32 page = 1;
+  int32 size = 2;
+  optional string apiName = 3;
+  optional string apiPath = 4;
+  optional string apiType = 5;
+  optional string status = 6;
+}
+
+message ApiListResp {
+  int32 code = 1;
+  string msg = 2;
+  repeated Api list = 3;
+  int64 total = 4;
+}
+
+message ApiResp {
+  int32 code = 1;
+  string msg = 2;
+  optional Api data = 3;
+}
+
+message LoginLog {
+  optional int64 id = 1;
+  optional string idStr = 2;
+  optional string username = 3;
+  optional string loginIp = 4;
+  optional string status = 5;
+  optional string msg = 6;
+  optional int64 loginAt = 7;
+}
+
+message OperationLog {
+  optional int64 id = 1;
+  optional string idStr = 2;
+  optional string module = 3;
+  optional string operation = 4;
+  optional string requestMethod = 5;
+  optional string requestUrl = 6;
+  optional string requestParam = 7;
+  optional string responseData = 8;
+  optional int64 duration = 9;
+  optional string status = 10;
+  optional string errorMsg = 11;
+  optional int64 operatorId = 12;
+  optional string operatorIdStr = 13;
+  optional string operatorName = 14;
+  optional string operatorIp = 15;
+  optional int64 tenantId = 16;
+  optional string tenantIdStr = 17;
+  optional int64 createdAt = 18;
+}
+
+message EmptyReq {}
+
+message EmptyResp {
+  int32 code = 1;
+  string msg = 2;
+}
+
+message LogPageReq {
+  int32 page = 1;
+  int32 size = 2;
+  optional string username = 3;
+  optional string status = 4;
+  optional string ip = 5;
+  optional string module = 6;
+  optional string operation = 7;
+  optional string operatorName = 8;
+  optional string path = 9;
+}
+
+message LoginLogListResp {
+  int32 code = 1;
+  string msg = 2;
+  repeated LoginLog list = 3;
+  int64 total = 4;
+}
+
+message OperationLogListResp {
+  int32 code = 1;
+  string msg = 2;
+  repeated OperationLog list = 3;
+  int64 total = 4;
+}
+
+service SysUsers {
+  rpc CreateUser(UserReq) returns (UserResp);
+  rpc UpdateUser(UserReq) returns (UserResp);
+  rpc DeleteUser(IdsReq) returns (EmptyResp);
+  rpc GetUserList(UserPageReq) returns (UserListResp);
+  rpc GetUserById(IdReq) returns (UserResp);
+  rpc GetUserByUsername(UserReq) returns (UserResp);
+  rpc ResetPassword(UserReq) returns (EmptyResp);
+  rpc AssignRoles(UserReq) returns (EmptyResp);
+  rpc GetUserRoleCodes(IdReq) returns (RoleCodesResp);
+  rpc RecordLoginResult(LoginRecordReq) returns (EmptyResp);
+}
+
+message RoleCodesResp {
+  int32 code = 1;
+  string msg = 2;
+  repeated string codes = 3;
+}
+
+service SysRoles {
+  rpc CreateRole(RoleReq) returns (RoleResp);
+  rpc UpdateRole(RoleReq) returns (RoleResp);
+  rpc DeleteRole(IdsReq) returns (EmptyResp);
+  rpc GetRoleList(RolePageReq) returns (RoleListResp);
+  rpc GetRoleById(IdReq) returns (RoleResp);
+  rpc AssignMenus(RoleReq) returns (EmptyResp);
+  rpc AssignApis(RoleReq) returns (EmptyResp);
+}
+
+service SysDepts {
+  rpc CreateDept(DeptReq) returns (DeptResp);
+  rpc UpdateDept(DeptReq) returns (DeptResp);
+  rpc DeleteDept(IdsReq) returns (EmptyResp);
+  rpc GetDeptList(DeptPageReq) returns (DeptListResp);
+  rpc GetDeptById(IdReq) returns (DeptResp);
+  rpc GetDeptTree(EmptyReq) returns (DeptTreeResp);
+}
+
+service SysMenus {
+  rpc CreateMenu(MenuReq) returns (MenuResp);
+  rpc UpdateMenu(MenuReq) returns (MenuResp);
+  rpc DeleteMenu(IdsReq) returns (EmptyResp);
+  rpc GetMenuList(MenuPageReq) returns (MenuListResp);
+  rpc GetMenuById(IdReq) returns (MenuResp);
+  rpc GetMenuTree(EmptyReq) returns (MenuTreeResp);
+  rpc GetMenuRouters(EmptyReq) returns (MenuTreeResp);
+}
+
+service SysDicts {
+  rpc CreateDict(DictReq) returns (DictResp);
+  rpc UpdateDict(DictReq) returns (DictResp);
+  rpc DeleteDict(IdsReq) returns (EmptyResp);
+  rpc GetDictList(DictPageReq) returns (DictListResp);
+  rpc GetDictById(IdReq) returns (DictResp);
+}
+
+service SysDictDatas {
+  rpc CreateDictData(DictDataReq) returns (DictDataResp);
+  rpc UpdateDictData(DictDataReq) returns (DictDataResp);
+  rpc DeleteDictData(IdsReq) returns (EmptyResp);
+  rpc GetDictDataList(DictDataPageReq) returns (DictDataListResp);
+  rpc GetDictDataById(IdReq) returns (DictDataResp);
+  rpc GetDictDataByDictKey(DictReq) returns (DictDataListResp);
+}
+
+service SysTenants {
+  rpc CreateTenant(TenantReq) returns (TenantResp);
+  rpc UpdateTenant(TenantReq) returns (TenantResp);
+  rpc DeleteTenant(IdsReq) returns (EmptyResp);
+  rpc GetTenantList(TenantPageReq) returns (TenantListResp);
+  rpc GetTenantById(IdReq) returns (TenantResp);
+  rpc GetTenantByCode(TenantReq) returns (TenantResp);
+  rpc ChangeTenantStatus(TenantReq) returns (EmptyResp);
+  rpc GetTenantUsers(TenantReq) returns (UserListResp);
+}
+
+service SysPackages {
+  rpc CreatePackage(PackageReq) returns (PackageResp);
+  rpc UpdatePackage(PackageReq) returns (PackageResp);
+  rpc DeletePackage(IdsReq) returns (EmptyResp);
+  rpc GetPackageList(PackagePageReq) returns (PackageListResp);
+  rpc GetPackageById(IdReq) returns (PackageResp);
+  rpc AssignPackageMenus(PackageReq) returns (EmptyResp);
+  rpc AssignPackageApis(PackageReq) returns (EmptyResp);
+}
+
+service SysApis {
+  rpc CreateApi(ApiReq) returns (ApiResp);
+  rpc UpdateApi(ApiReq) returns (ApiResp);
+  rpc DeleteApi(IdsReq) returns (EmptyResp);
+  rpc GetApiList(ApiPageReq) returns (ApiListResp);
+  rpc GetApiById(IdReq) returns (ApiResp);
+  // GetMyApis 返回当前用户角色并集内拥有的 API（含其 group 父节点），
+  // 供角色"分配 API"树与后端授权校验使用；default 租户管理员返回全量。
+  rpc GetMyApis(EmptyReq) returns (ApiListResp);
+}
+
+service SysLogs {
+  rpc GetLoginLogList(LogPageReq) returns (LoginLogListResp);
+  rpc GetOperationLogList(LogPageReq) returns (OperationLogListResp);
+  rpc CreateOperationLog(OperationLog) returns (EmptyResp);
+}
+
+service SysInit {
+  rpc InitAll(EmptyReq) returns (EmptyResp);
+}

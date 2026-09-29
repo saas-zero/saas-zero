@@ -1,13 +1,56 @@
-# SaaS-Zero 网关服务 (Gateway)
+# SaaS-Zero Gateway
 
-基于 go-zero 构建的多租户微服务版本 —— **API 网关，统一流量入口**
+API 网关 — go-zero gateway 纯 HTTP 透传代理。统一入口 `:18080`。
 
-地址：https://github.com/saas-zero/saas-zero-gateway
+## 路由表
 
-## 职责
+| 上游服务 | 路由前缀 | 目标端口 |
+|---|---|---|
+| Auth API | `/oauth/*` | `:18081` |
+| Basedata API | `/system/*`, `/init/*` | `:18083` |
+基于zero构建的多租户微服务版本  
 
-- **统一入口**：对外唯一暴露节点，监听 `:18080`
-- **HTTP 纯透传代理**：按路径前缀将请求转发到对应上游服务（go-zero `gateway`）
-  - `/oauth/*` → 认证服务（`:18081`）
-  - `/system/*`、`/init/*` → 基础数据 API（`:18083`）
-- **不做鉴权**：不解析 JWT、不做 Casbin 检查，只做路由转发，鉴权逻辑收敛在各业务服务内部
+网关不处理业务逻辑，只做请求转发。所有 JWT 认证、Casbin 权限检查由后端服务自行完成。
+地址：https://github.com/saas-zero/saas-zero-gateway  
+
+## 配置
+
+`etc/gateway.yaml` 中的 `Upstreams` 定义路由映射：
+
+```yaml
+Upstreams:
+  - Name: authservice.api
+    Http:
+      Target: 127.0.0.1:18081
+    Mappings:
+      - Method: POST
+        Path: /oauth/login
+      - Method: GET
+        Path: /oauth/verify
+      # ...
+
+  - Name: basedata-api
+    Http:
+      Target: 127.0.0.1:18083
+    Mappings:
+      - Method: POST
+        Path: /system/user/create
+      # ...
+      - Method: POST
+        Path: /init/all
+```
+
+## 启动
+
+```bash
+go run ./apps/saas-zero-gateway
+# 或进入目录
+cd apps/saas-zero-gateway
+# 修改 configFile 或使用默认 etc/gateway.yaml
+```
+
+> 网关为**纯 HTTP 直连**（Target 为 `127.0.0.1:18081/18083`），**不依赖 etcd 服务发现**，无需等待 etcd 就绪。
+
+## 新增接口路由
+
+在 `etc/gateway.yaml` 对应 Upstream 的 Mappings 中追加 `Method + Path` 即可（如 `/system/package/assignMenus`）。

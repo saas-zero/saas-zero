@@ -1,0 +1,25 @@
+syntax = "v1"
+
+type BaseResp {
+	Code int         `json:"code"`
+	Msg  string      `json:"msg"`
+	Data interface{} `json:"data,omitempty"`
+}
+
+type PageReq {
+	Page int `json:"page,optional"`
+	Size int `json:"size,optional"`
+}
+
+type PageResp {
+	List  interface{} `json:"list"`
+	Total int64       `json:"total"`
+}
+
+type IdReq {
+	Id string `path:"id,optional" form:"id,optional"`
+}
+
+type IdsReq {
+	Ids []string `json:"ids"`
+}

@@ -1,0 +1,32 @@
+# job 服务配置
+Name: jobservice.rpc
+ListenOn: 0.0.0.0:18085
+Mode: dev
+Etcd:
+  Hosts:
+    - 192.168.201.81:32379
+  Key: jobservice.rpc
+
+# job 独立数据库（与主库分离，业务数据隔离）
+Postgres:
+  DataSource: host=192.168.201.188 port=5432 user=postgres password=AM38xymTdFree4Fh dbname=saas_zero_job sslmode=disable
+  # Debug: 开启后 ent 打印全部 SQL 及参数（含敏感值），仅限本地排障，生产必须关闭
+  Debug: false
+
+CacheRedis:
+  Host: 192.168.201.188:6379
+  Pass: "redis.123456"
+  Type: node
+  DB: 3
+
+Scheduler:
+  # 开启调度器（false=仅提供 CRUD，不触发任务）
+  Enabled: true
+  # DB 对齐轮询间隔（秒）
+  SyncInterval: 30
+  # 任务日志保留天数
+  LogRetentionDays: 30
+  # 每日日志清理小时（0-23）
+  CleanupHour: 3
+  # 执行实例标识（多实例排查；空=hostname:pid:seq）
+  Node: ""

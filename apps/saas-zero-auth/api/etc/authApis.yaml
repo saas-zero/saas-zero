@@ -1,0 +1,24 @@
+Name: authservice.api
+Host: 0.0.0.0
+Port: 18081
+Timeout: 10000
+
+JwtSecret: saas-zero-secret-key-2024
+JwtExpire: 86400
+
+Redis:
+  Host: 192.168.201.188:6379
+  Pass: "redis.123456"
+  Type: node
+  DB: 3
+
+Etcd:
+  Hosts:
+    - 192.168.201.81:32379
+  Key: authservice.api
+
+BaseDataRpc:
+  Etcd:
+    Hosts:
+      - 192.168.201.81:32379
+    Key: basedataservice.rpc

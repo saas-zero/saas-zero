@@ -1,0 +1,19 @@
+Name: basedataservice.rpc
+ListenOn: 0.0.0.0:18084
+Timeout: 10000
+
+Etcd:
+  Hosts:
+  - 192.168.201.81:32379
+  Key: basedataservice.rpc
+
+CacheRedis:
+  Host: 192.168.201.188:6379
+  Pass: "redis.123456"
+  Type: node
+  DB: 3
+
+Postgres:
+  DataSource: host=192.168.201.188 port=5432 user=postgres password=AM38xymTdFree4Fh dbname=saas_zero_kun sslmode=disable
+  # Debug: 打印全部 SQL 及参数（含密码哈希等敏感值），仅本地排障时改为 true
+  Debug: false

@@ -1,0 +1,54 @@
+syntax = "v1"
+
+import "base_resp.api"
+
+type (
+	OauthLoginReq {
+		TenantCode string `json:"tenantCode"`
+		Username   string `json:"username"`
+		Password   string `json:"password"`
+		CaptchaId  string `json:"captchaId,optional"`
+		CaptchaVal string `json:"captchaVal,optional"`
+	}
+	OauthRefreshReq {
+		Token string `json:"token"`
+	}
+	PasswordChangeReq {
+		OldPassword string `json:"oldPassword"`
+		NewPassword string `json:"newPassword"`
+	}
+	PasswordResetReq {
+		UserId      string `json:"userId"`
+		NewPassword string `json:"newPassword"`
+	}
+)
+
+service AuthApis {
+	@handler OauthLogin
+	post /oauth/login (OauthLoginReq) returns (BaseResp)
+
+	@handler OauthVerify
+	get /oauth/verify returns (BaseResp)
+
+	@handler OauthRefresh
+	post /oauth/refresh (OauthRefreshReq) returns (BaseResp)
+
+	@handler PasswordChange
+	post /oauth/password/change (PasswordChangeReq) returns (BaseResp)
+
+	@handler PasswordReset
+	post /oauth/password/reset (PasswordResetReq) returns (BaseResp)
+
+	@handler OauthUserInfo
+	get /oauth/userinfo returns (BaseResp)
+
+	@handler OauthMenus
+	get /oauth/menus returns (BaseResp)
+
+	@handler OauthPermissions
+	get /oauth/permissions returns (BaseResp)
+
+	@handler OauthCode
+	get /oauth/code returns (BaseResp)
+}
+

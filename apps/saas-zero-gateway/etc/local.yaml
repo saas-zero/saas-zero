@@ -1,0 +1,175 @@
+Name: gateway
+Host: 0.0.0.0
+Port: 18080
+
+Upstreams:
+  - Name: authservice.api
+    Http:
+      Target: 127.0.0.1:18081
+      Timeout: 10000
+    Mappings:
+      - Method: POST
+        Path: /oauth/login
+      - Method: GET
+        Path: /oauth/verify
+      - Method: POST
+        Path: /oauth/refresh
+      - Method: GET
+        Path: /oauth/userinfo
+      - Method: GET
+        Path: /oauth/menus
+      - Method: GET
+        Path: /oauth/permissions
+      - Method: POST
+        Path: /oauth/password/change
+      - Method: POST
+        Path: /oauth/password/reset
+      - Method: GET
+        Path: /oauth/code
+
+  - Name: basedata-api
+    Http:
+      Target: 127.0.0.1:18083
+      Timeout: 10000
+    Mappings:
+      # User
+      - Method: POST
+        Path: /system/user/create
+      - Method: POST
+        Path: /system/user/update
+      - Method: POST
+        Path: /system/user/delete
+      - Method: GET
+        Path: /system/user/list
+      - Method: GET
+        Path: /system/user/detail
+      - Method: POST
+        Path: /system/user/assignRoles
+      - Method: POST
+        Path: /system/user/resetPassword
+      # Role
+      - Method: POST
+        Path: /system/role/create
+      - Method: POST
+        Path: /system/role/update
+      - Method: POST
+        Path: /system/role/delete
+      - Method: GET
+        Path: /system/role/list
+      - Method: GET
+        Path: /system/role/detail
+      - Method: POST
+        Path: /system/role/assignMenus
+      - Method: POST
+        Path: /system/role/assignApis
+      # Menu
+      - Method: POST
+        Path: /system/menu/create
+      - Method: POST
+        Path: /system/menu/update
+      - Method: POST
+        Path: /system/menu/delete
+      - Method: GET
+        Path: /system/menu/list
+      - Method: GET
+        Path: /system/menu/detail
+      - Method: GET
+        Path: /system/menu/tree
+      - Method: GET
+        Path: /system/menu/routers
+      # Dept
+      - Method: POST
+        Path: /system/dept/create
+      - Method: POST
+        Path: /system/dept/update
+      - Method: POST
+        Path: /system/dept/delete
+      - Method: GET
+        Path: /system/dept/list
+      - Method: GET
+        Path: /system/dept/detail
+      - Method: GET
+        Path: /system/dept/tree
+      # Dict
+      - Method: POST
+        Path: /system/dict/create
+      - Method: POST
+        Path: /system/dict/update
+      - Method: POST
+        Path: /system/dict/delete
+      - Method: GET
+        Path: /system/dict/list
+      - Method: GET
+        Path: /system/dict/detail
+      # DictData
+      - Method: POST
+        Path: /system/dictData/create
+      - Method: POST
+        Path: /system/dictData/update
+      - Method: POST
+        Path: /system/dictData/delete
+      - Method: GET
+        Path: /system/dictData/list
+      - Method: GET
+        Path: /system/dictData/detail
+      - Method: GET
+        Path: /system/dictData/byDictKey
+      # Tenant
+      - Method: POST
+        Path: /system/tenant/create
+      - Method: POST
+        Path: /system/tenant/update
+      - Method: POST
+        Path: /system/tenant/delete
+      - Method: GET
+        Path: /system/tenant/list
+      - Method: GET
+        Path: /system/tenant/detail
+      - Method: POST
+        Path: /system/tenant/changeStatus
+      - Method: GET
+        Path: /system/tenant/users
+      # Package
+      - Method: POST
+        Path: /system/package/create
+      - Method: POST
+        Path: /system/package/update
+      - Method: POST
+        Path: /system/package/delete
+      - Method: GET
+        Path: /system/package/list
+      - Method: GET
+        Path: /system/package/detail
+      - Method: POST
+        Path: /system/package/assignMenus
+      - Method: POST
+        Path: /system/package/assignApis
+      # Api
+      - Method: POST
+        Path: /system/api/create
+      - Method: POST
+        Path: /system/api/update
+      - Method: POST
+        Path: /system/api/delete
+      - Method: GET
+        Path: /system/api/list
+      - Method: GET
+        Path: /system/api/mine
+      - Method: GET
+        Path: /system/api/detail
+      # Log
+      - Method: GET
+        Path: /system/log/loginLog/list
+      - Method: GET
+        Path: /system/log/operationLog/list
+      # Init endpoints
+      - Method: POST
+        Path: /init/all
+      - Method: POST
+        Path: /init/package/create
+      - Method: POST
+        Path: /init/tenant/create
+      - Method: POST
+        Path: /init/user/create
+      - Method: POST
+        Path: /init/role/create

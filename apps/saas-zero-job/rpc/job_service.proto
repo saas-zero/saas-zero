@@ -1,0 +1,134 @@
+// 声明 proto 语法版本，固定值
+syntax = "proto3";
+
+// proto 包名
+package job_service;
+
+// 生成 golang 代码后的包名
+option go_package = "./apps";
+
+import "google/protobuf/empty.proto";
+
+// ==================== 定时任务服务 ====================
+// 平台级定时任务（handler 注册表模式）：
+// DB 只配置触发时机（cron/参数/策略），执行逻辑在代码注册表 job.Register(code, fn)。
+
+message Job {
+  string id = 1;                  // 雪花ID (string 避免前端精度丢失)
+  int64 created_at = 2;           // 创建时间(秒)
+  int64 updated_at = 3;           // 更新时间(秒)
+  string name = 4;                // 任务名称
+  string group = 5;               // 分组 (字典 job_group)
+  string handler = 6;             // 处理器注册码
+  string params = 7;              // 处理器参数 (JSON)
+  string cron_expression = 8;     // 兼容 5/6 位 (秒可选)
+  string time_zone = 9;           // 时区
+  string misfire_policy = 10;     // skip/fire_once/fire_all
+  bool concurrent = 11;           // 是否允许并发
+  int32 timeout = 12;             // 超时(秒)
+  int32 max_retry = 13;           // 失败重试次数
+  int32 retry_interval = 14;      // 重试间隔(秒)
+  string status = 15;             // active/suspended (StatusMixin)
+  string remark = 16;             // 备注
+  int64 next_run_at = 17;         // 下次触发时间(秒, 调度器回写)
+  int64 last_run_at = 18;         // 上次触发时间(秒)
+  string last_status = 19;        // 上次结果: success/fail/timeout/skipped/none
+  int64 last_duration = 20;       // 上次耗时(毫秒)
+  string last_error = 21;         // 上次错误摘要
+}
+
+message IdReq {
+  string id = 1;
+}
+
+message IdsReq {
+  repeated string ids = 1;
+}
+
+message EmptyResp {
+  int32 code = 1;
+  string msg = 2;
+}
+
+message JobListReq {
+  string name = 1;
+  string group = 2;
+  string handler = 3;
+  string status = 4;
+  int32 page = 5;
+  int32 page_size = 6;
+}
+
+message JobListResp {
+  repeated Job list = 1;
+  int64 total = 2;
+}
+
+message JobLog {
+  string id = 1;
+  int64 created_at = 2;           // 执行时间(秒)
+  string job_id = 3;              // 任务ID (string)
+  string job_name = 4;            // 任务名称快照
+  string job_group = 5;           // 分组快照
+  string handler = 6;             // 处理器注册码快照
+  string trigger_type = 7;        // cron/manual/retry
+  string exec_node = 8;           // 执行实例标识
+  string status = 9;              // running/success/fail/timeout/skipped
+  int32 attempt = 10;             // 尝试次数
+  string message = 11;            // 结果摘要
+  string exception_info = 12;     // 异常信息(截断)
+  int64 duration = 13;            // 执行时长(毫秒)
+}
+
+message JobLogListReq {
+  string job_id = 1;
+  string job_name = 2;
+  string status = 3;
+  int64 begin_time = 4;           // 开始时间(秒)
+  int64 end_time = 5;             // 结束时间(秒)
+  int32 page = 6;
+  int32 page_size = 7;
+}
+
+message JobLogListResp {
+  repeated JobLog list = 1;
+  int64 total = 2;
+}
+
+message CleanJobLogReq {
+  string job_id = 1;              // 为空 = 不清理；必须按 job_id 限定，禁止全表
+  int32 keep_days = 2;            // 保留天数, 默认 30
+}
+
+message HandlerItem {
+  string code = 1;                // 注册码，如 "report.daily"
+}
+
+message HandlerListResp {
+  repeated HandlerItem list = 1;
+}
+
+service SysJobs {
+  // 根据ID获取任务
+  rpc GetJobById(IdReq) returns (Job);
+  // 获取任务列表
+  rpc GetJobList(JobListReq) returns (JobListResp);
+  // 创建任务
+  rpc CreateJob(Job) returns (EmptyResp);
+  // 更新任务 (更新后通知调度器重新加载)
+  rpc UpdateJob(Job) returns (EmptyResp);
+  // 删除任务 (软删, 通知调度器移除)
+  rpc DeleteJob(IdsReq) returns (EmptyResp);
+  // 启动任务
+  rpc StartJob(IdReq) returns (EmptyResp);
+  // 暂停任务
+  rpc PauseJob(IdReq) returns (EmptyResp);
+  // 立即执行任务 (不受 status 限制, 记 trigger=manual)
+  rpc RunJobOnce(IdReq) returns (EmptyResp);
+  // 清理任务日志 (按 job_id+保留天数, 禁止全表)
+  rpc CleanJobLog(CleanJobLogReq) returns (EmptyResp);
+  // 获取任务日志列表
+  rpc GetJobLogList(JobLogListReq) returns (JobLogListResp);
+  // 获取已注册的处理器列表
+  rpc GetRegisteredHandlers(google.protobuf.Empty) returns (HandlerListResp);
+}
