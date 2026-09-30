@@ -43,7 +43,7 @@ SaaS-Zero 是一套可直接落地的多租户 SaaS 中后台微服务解决方�
 | 特性 | 说明 |
 |---|---|
 | 🏢 **多租户** | 共享数据库 + 行级 `tenant_id` 隔离；字典支持"系统默认 + 租户自定义"继承覆盖 |
-| 🔐 **双轨权限** | 前端菜单走 `sys_role_menus`，后端 API 走 Casbin Domain RBAC（`casbin_rule` 表） |
+| 🔐 **三级权限** | 菜单级 / 按钮级（前端，`sys_role_menus`）+ API 级（后端，Casbin `casbin_rule`） |
 | 📦 **套餐体系** | 套餐 = 菜单模板 + API 模板；开通租户时自动继承并补全按钮权限 |
 | 🧬 **Ent Mixin 钩子** | 雪花 ID / 审计字段（created_by 等）/ 软删除 / 租户字段全自动填充，Logic 无样板代码 |
 | 🎫 **JWT + Redis 会话** | token 存 Redis，`tokenVersion` 变更即踢旧会话（改密、重配权限后立即失效） |
@@ -99,7 +99,7 @@ SaaS-Zero 是一套可直接落地的多租户 SaaS 中后台微服务解决方�
 | `saas-zero-common` | Go 库 | — | Mixin / 雪花 ID / bcrypt / JWT / 加密 / Casbin / 错误码等公共库 |
 | `saas-zero-web` | 前端项目 | `:8000` | React 19 + Ant Design Pro + Umi 4（独立项目） |
 
-> 后端模块全部在本仓库内，由 `go.work` 聚合构建。
+> 后端模块全部在本仓库内；其中 auth / basedata / gateway / job / common 由 `go.work` 聚合构建。
 
 ## 技术栈
 
@@ -161,10 +161,10 @@ saas-zero/
 │   ├── ARCHITECTURE.md        # 详细架构设计文档
 │   └── images/                # 截图 / 架构图
 ├── AGENTS.md                  # AI 辅助开发指南
-└── go.work                    # Go Workspace（当前 use 4 个模块：auth / basedata / gateway / common）
+└── go.work                    # Go Workspace（当前 use 5 个模块：auth / basedata / gateway / job / common）
 ```
 
-> `etcd` / `file` / `gen` / `job` 四个模块**未纳入** `go.work`。在这几个模块目录内构建或运行需要 `GOWORK=off`，或先把模块加入 workspace：`go work use ./apps/saas-zero-job`。
+> `etcd` / `file` / `gen` 三个模块**未纳入** `go.work`。在这几个模块目录内构建或运行需要 `GOWORK=off`，或先把模块加入 workspace：`go work use ./apps/saas-zero-file`。
 
 ## 环境要求
 
@@ -188,7 +188,7 @@ redis:       127.0.0.1:6379
 ### 2. 克隆
 
 ```bash
-# 克隆本仓库（已整合全部后端模块，go.work 聚合 auth / basedata / gateway / common）
+# 克隆本仓库（已整合全部后端模块，go.work 聚合 auth / basedata / gateway / job / common）
 git clone https://github.com/saas-zero/saas-zero.git
 
 # 前端是独立项目，需要时单独克隆
@@ -212,9 +212,9 @@ go run ./apps/saas-zero-auth/api
 # 4) 网关（统一入口 :18080）
 go run ./apps/saas-zero-gateway
 
-# 5) 定时任务（job 未纳入 go.work，需在各自目录内运行；配置路径 etc/*.yaml 相对运行目录）
-cd apps/saas-zero-job/rpc && GOWORK=off go run .   # :18085
-cd apps/saas-zero-job/api && GOWORK=off go run .   # :18086
+# 5) 定时任务（配置路径 etc/*.yaml 相对运行目录，需在各自目录内运行）
+cd apps/saas-zero-job/rpc && go run .   # :18085
+cd apps/saas-zero-job/api && go run .   # :18086
 ```
 
 ### 4. 验证
@@ -439,9 +439,49 @@ POST /oauth/login
 
 > `tenantCode` 是租户编码，用于区分不同租户的同名用户。`sys_users` 的 `username` 字段改为 `(tenant_id, username)` 联合唯一，不同租户可存在同名用户。
 
+## 权限体系
+
+权限分三级，**前端管两级、后端管一级，任何一级都不能替代另一级**：
+
+| 级别 | 粒度 | 数据来源 | 下发 / 校验 | 作用 |
+|---|---|---|---|---|
+| **菜单级** | 页面 / 路由 | 角色勾选的菜单 → `sys_role_menus`（套餐为模板） | `GET /oauth/menus` → 前端 `menuData` | 左侧菜单显隐 + 路由是否可进入 |
+| **按钮级** | 页面内操作按钮 | `menu_type=button` 菜单节点，权限码存 `sys_menus.path` | `GET /oauth/permissions` → 前端 `usePermission().can(code)` | 新增 / 修改 / 删除等按钮显隐 |
+| **API 级** | 每个后端接口 | 角色勾选的 API → Casbin 策略 `casbin_rule` | basedata API 中间件逐请求 `Enforce(roleCode, tenantId, path, method)` | **真正的安全边界**，绕过前端照样拦 |
+
+> 页面级访问跟随后端菜单（前端 `access.ts` 的 `hasMenu(path)`）：后端下发了某菜单即可进入该页面，**按钮码只决定页面内按钮的显隐**。
+
+### 按钮级权限
+
+权限码直接定义在 `menu_type=button` 的菜单节点上，`path` 字段即权限码。`seedMenus`（`sysinit/initAllLogic.go`）内置 48 个，例如：
+
+```
+system:user:manage   system:user:create     system:user:update      system:user:delete
+system:user:resetPassword                   system:user:assignRoles
+system:role:manage   system:role:create     system:role:assignMenus system:role:assignApis
+```
+
+完整链路：
+
+1. **分配**：角色管理「分配菜单」勾选按钮节点 → 写 `sys_role_menus`
+2. **下发**：`GET /oauth/permissions` 递归遍历用户菜单树，收集所有 `menu_type=button` 节点的 `path`（`oauthPermissionsLogic.go` 的 `collectButtonPerms`），返回 `["system:user:create", ...]`
+3. **注入**：前端 `getInitialState()` 调 `/oauth/permissions`，把权限码合并进 `currentUser.permissions`
+4. **使用**：页面里 `const { can } = usePermission()`，用 `can()` 控制按钮是否渲染
+
+```tsx
+{can('system:user:create') && <Button type="primary">新建</Button>}
+{can('system:user:delete') && selectedRowKeys.length > 0 && <Button danger>批量删除</Button>}
+```
+
+5. **兜底**：按钮藏起来不等于安全 —— 对应接口仍由 Casbin 策略拦截（见下节）
+
+> **default 租户的 admin 是超级管理员**：前端 `isSuperAdmin()` 判定 `tenantCode=default && roleCodes 含 admin`，其 `can()` 恒为 `true`，不走权限码。
+>
+> **「页面进得去、按钮不显示」是常见现象**：角色只勾了页面菜单、没勾按钮节点时就会这样。新建租户时自动补全套餐所含页面的 button 子节点（见「继承式授权」），就是为了避免这种半残状态。
+
 ## Casbin 权限管理
 
-角色-API 权限通过 `POST /system/role/assignApis` 接口管理：
+API 级（第三级）权限的落地实现。角色-API 权限通过 `POST /system/role/assignApis` 接口管理：
 
 ```bash
 # 为角色分配 API 权限
@@ -481,15 +521,16 @@ RPC 层通过 `AssignApis` 修改策略后实时写入 `casbin_rule` 表。API �
 ### 编译
 
 ```bash
-# 从 workspace 根编译已纳入 go.work 的模块
+# 从 workspace 根编译（涵盖已纳入 go.work 的全部模块）
 go build ./saas-zero-common/...
 go build ./apps/saas-zero-basedata/...
 go build ./apps/saas-zero-auth/...
 go build ./apps/saas-zero-gateway/...
+go build ./apps/saas-zero-job/...
 
-# 未纳入 go.work 的模块（job / file / gen）在各自模块目录内构建
-# 首次构建前先整理依赖，否则 go.sum 缺少 workspace 提供的条目（如 casbin）
-cd apps/saas-zero-job && GOWORK=off go mod tidy && GOWORK=off go build ./...
+# 未纳入 go.work 的模块（file / gen）需在模块目录内构建，首次先整理依赖
+# 否则 go.sum 缺少 workspace 提供的条目（如 casbin）
+cd apps/saas-zero-file && GOWORK=off go mod tidy && GOWORK=off go build ./...
 ```
 
 ### 代码生成

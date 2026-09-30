@@ -8,7 +8,7 @@
 
 ## 模块一览
 
-全部模块（gateway / auth / basedata / job / file / gen / etcd / common）均在本仓库 `apps/` 与 `saas-zero-common/` 内；其中 auth / basedata / gateway / common 由 `go.work` 聚合，job / file / gen / etcd 未纳入 workspace（构建方式见「启动顺序」与「常用命令速查」）。
+全部模块（gateway / auth / basedata / job / file / gen / etcd / common）均在本仓库 `apps/` 与 `saas-zero-common/` 内；其中 auth / basedata / gateway / job / common 由 `go.work` 聚合，file / gen / etcd 未纳入 workspace（构建方式见「启动顺序」与「常用命令速查」）。
 
 ## 技术栈
 
@@ -80,7 +80,7 @@ saas-zero/
 
 依赖关系：`gateway → auth → basedata → common`，`gateway → basedata`，`gateway → job`
 
-`job` / `file` / `gen` 为**平台级独立服务**：各自持有独立 ent schema 与数据库，不经 basedata；job 与 file/gen 均未纳入 `go.work`（见「启动顺序」）。
+`job` / `file` / `gen` 为**平台级独立服务**：各自持有独立 ent schema 与数据库，不经 basedata；file / gen 未纳入 `go.work`（见「启动顺序」）。
 
 ## 代码风格
 
@@ -735,7 +735,7 @@ s.AddUnaryInterceptors(authInterceptor)
 | `goctl rpc protoc xxx.proto --go_out=. --go-grpc_out=. --zrpc_out=. -m --style goZero` | 生成 gRPC 代码（**全量生成，会覆盖逻辑**） | `saas-zero-basedata/rpc` |
 | `protoc --go_out=. --go-grpc_out=. xxx.proto` | **仅**生成 proto message + gRPC stub（不覆盖逻辑） | `saas-zero-basedata/rpc` |
 | `go build ./apps/saas-zero-xxx/...` | 从 workspace 根编译指定服务（仅限已纳入 `go.work` 的模块） | `saas-zero/` (workspace 根) |
-| `GOWORK=off go build ./...` | 编译未纳入 `go.work` 的模块（job / file / gen，需先 `go mod tidy`） | 对应模块目录 |
+| `GOWORK=off go build ./...` | 编译未纳入 `go.work` 的模块（file / gen，需先 `go mod tidy`） | 对应模块目录 |
 | `go run .` 或 `go run xxx.go` | 启动服务（配置 `etc/*.yaml` 相对运行目录，需在 rpc/ 或 api/ 子目录内执行） | 对应 app 目录 |
 
 ## 目录功能速览
@@ -867,10 +867,9 @@ go run ./apps/saas-zero-auth/api
 go run ./apps/saas-zero-gateway
 
 # 6. job RPC + job API (定时任务与调度器 :18085 / :18086)
-#    job 未纳入 go.work，需在各自目录内以 GOWORK=off 运行（或先执行 go work use ./apps/saas-zero-job）
-#    注意：配置路径 etc/*.yaml 相对运行目录，必须在 rpc/ 与 api/ 子目录内启动
-cd apps/saas-zero-job/rpc && GOWORK=off go run .
-cd apps/saas-zero-job/api && GOWORK=off go run .
+#    注意：配置路径 etc/*.yaml 相对运行目录，须在 rpc/ 与 api/ 子目录内启动
+cd apps/saas-zero-job/rpc && go run .
+cd apps/saas-zero-job/api && go run .
 ```
 
 ## 网关路由表

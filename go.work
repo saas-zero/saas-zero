@@ -4,5 +4,6 @@ use (
 	./apps/saas-zero-auth
 	./apps/saas-zero-basedata
 	./apps/saas-zero-gateway
+	./apps/saas-zero-job
 	./saas-zero-common
 )
