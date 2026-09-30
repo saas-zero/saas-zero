@@ -70,7 +70,7 @@ var (
 		{Name: "job_group", Type: field.TypeString, Size: 64, Comment: "任务分组(快照) | Job Group(snapshot)", Default: ""},
 		{Name: "handler", Type: field.TypeString, Size: 128, Comment: "处理器注册码(快照) | Handler Code(snapshot)", Default: ""},
 		{Name: "trigger_type", Type: field.TypeEnum, Comment: "触发方式: cron-调度, manual-手动, retry-重试 | Trigger Type", Enums: []string{"cron", "manual", "retry"}, Default: "cron"},
-		{Name: "exec_node", Type: field.TypeString, Size: 64, Comment: "执行实例标识 | Executor Node", Default: ""},
+		{Name: "exec_node", Type: field.TypeString, Size: 128, Comment: "执行实例标识(hostname:pid，容器主机名可能较长) | Executor Node", Default: ""},
 		{Name: "status", Type: field.TypeEnum, Comment: "执行状态 | Execution Status", Enums: []string{"running", "success", "fail", "timeout", "skipped"}, Default: "running"},
 		{Name: "attempt", Type: field.TypeInt32, Comment: "尝试次数(1=首次) | Attempt", Default: 1},
 		{Name: "message", Type: field.TypeString, Size: 500, Comment: "结果摘要 | Result Message", Default: ""},

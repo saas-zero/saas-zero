@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"strconv"
 
 	"github.com/saas-zero/saas-zero-common/pkg/ent/mixins"
+	"github.com/saas-zero/saas-zero-common/pkg/envconf"
+	"github.com/saas-zero/saas-zero-common/pkg/errno"
 	"github.com/saas-zero/saas-zero-job/rpc/apps"
 	"github.com/saas-zero/saas-zero-job/rpc/internal/config"
 	"github.com/saas-zero/saas-zero-job/rpc/internal/server"
@@ -16,8 +19,10 @@ import (
 	"github.com/zeromicro/go-zero/core/service"
 	"github.com/zeromicro/go-zero/zrpc"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
 )
 
 // authInterceptor 从 gRPC metadata 注入审计用户上下文（x-user-id/x-user-name）
@@ -49,6 +54,38 @@ func withAuditUser(ctx context.Context) context.Context {
 	return ctx
 }
 
+// errnoInterceptor 把业务错误（*errno.Errno）转成带 gRPC 状态码的错误。
+// gRPC 原生不携带自定义业务码，默认全部落到 codes.Unknown，API 层只能看到
+// “内部服务器错误”；按业务码映射到状态码后，API 层才能还原出 {code,msg}。
+func errnoInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	resp, err := handler(ctx, req)
+	if err == nil {
+		return resp, nil
+	}
+	var e *errno.Errno
+	if errors.As(err, &e) {
+		return nil, status.Error(errnoToGRPC(e.Code), e.Msg)
+	}
+	return nil, err
+}
+
+// errnoToGRPC 业务码 → gRPC 状态码（只映射客户端可直接展示的错误码；
+// 500 等内部错误映射为 codes.Internal，由 API 层统一隐藏细节）。
+func errnoToGRPC(code int) codes.Code {
+	switch {
+	case code == errno.Unauthorized.Code:
+		return codes.Unauthenticated
+	case code == errno.Forbidden.Code:
+		return codes.PermissionDenied
+	case code >= 400 && code < 500:
+		return codes.InvalidArgument
+	case code >= 1000 && code < 1100:
+		return codes.InvalidArgument
+	default:
+		return codes.Internal
+	}
+}
+
 var configFile = flag.String("f", "etc/jobservice.yaml", "the config file")
 
 func main() {
@@ -56,6 +93,17 @@ func main() {
 
 	var c config.Config
 	conf.MustLoad(*configFile, &c)
+
+	// 生产环境用环境变量覆盖 YAML 明文敏感项（YAML 仅供本地调试）
+	c.Postgres.DataSource = envconf.String("POSTGRES_DSN", c.Postgres.DataSource)
+	c.CacheRedis.Host = envconf.String("REDIS_HOST", c.CacheRedis.Host)
+	c.CacheRedis.Pass = envconf.String("REDIS_PASS", c.CacheRedis.Pass)
+	if v := envconf.String("REDIS_DB", ""); v != "" {
+		if db, err := strconv.Atoi(v); err == nil {
+			c.CacheRedis.DB = db
+		}
+	}
+
 	ctx := svc.NewServiceContext(c)
 
 	s := zrpc.MustNewServer(c.RpcServerConf, func(grpcServer *grpc.Server) {
@@ -65,7 +113,7 @@ func main() {
 			reflection.Register(grpcServer)
 		}
 	})
-	s.AddUnaryInterceptors(authInterceptor)
+	s.AddUnaryInterceptors(authInterceptor, errnoInterceptor)
 	defer s.Stop()
 
 	fmt.Printf("Starting job rpc server at %s...\n", c.ListenOn)

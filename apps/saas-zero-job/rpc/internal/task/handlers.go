@@ -10,10 +10,11 @@ import (
 )
 
 // RegisterAll 注册所有内置任务处理器。
-// 业务代码在此处通过 job.Register(code, fn) 注册，code 与 sys_jobs.handler 字段对应。
+// 业务代码在此处通过 reg.Register(code, name, fn) 注册：code 与 sys_jobs.handler 对应，
+// name 是管理端下拉展示名（唯一来源，不在 yaml 里重复维护）。
 func RegisterAll(reg *scheduler.Registry) error {
 	// 示例任务：hello 打印参数（演示注册表机制，验证调度器工作）
-	if err := reg.Register("demo.hello", func(ctx context.Context, params map[string]any) error {
+	if err := reg.Register("demo.hello", "示例·打印参数", func(ctx context.Context, params map[string]any) error {
 		name := "world"
 		if v, ok := params["name"].(string); ok && v != "" {
 			name = v
@@ -25,7 +26,7 @@ func RegisterAll(reg *scheduler.Registry) error {
 	}
 
 	// 示例任务：delay 模拟耗时操作（配合 timeout/concurrent 验证超时与并发锁）
-	if err := reg.Register("demo.delay", func(ctx context.Context, params map[string]any) error {
+	if err := reg.Register("demo.delay", "示例·耗时任务", func(ctx context.Context, params map[string]any) error {
 		seconds := 3
 		if v, ok := params["seconds"].(float64); ok && v > 0 {
 			seconds = int(v)
@@ -41,7 +42,7 @@ func RegisterAll(reg *scheduler.Registry) error {
 	}
 
 	// 示例任务：fail 总是失败（配合 max_retry 验证重试）
-	if err := reg.Register("demo.fail", func(ctx context.Context, params map[string]any) error {
+	if err := reg.Register("demo.fail", "示例·失败任务", func(ctx context.Context, params map[string]any) error {
 		return fmt.Errorf("demo.fail always fails (params=%v)", params)
 	}); err != nil {
 		return err

@@ -24,7 +24,7 @@ func NewGetJobLogListLogic(ctx context.Context, svcCtx *svc.ServiceContext) *Get
 	}
 }
 
-// GetJobLogList 任务日志列表（必须按 jobId 或 jobName 过滤，支持状态/时间范围 + 分页）
+// GetJobLogList 任务日志列表（jobId/jobName/status/时间范围均可选，分页返回）
 func (l *GetJobLogListLogic) GetJobLogList(in *apps.JobLogListReq) (*apps.JobLogListResp, error) {
 	page, size := normalizePage(in.GetPage(), in.GetPageSize())
 

@@ -99,9 +99,10 @@ func (l *UpdateJobLogic) UpdateJob(in *apps.Job) (*apps.EmptyResp, error) {
 	if in.RetryInterval != 0 {
 		upd = upd.SetRetryInterval(in.RetryInterval)
 	}
-	// concurrent 是 bool：前端不传时无法区分"未设置"与"false"，仅当显式携带时更新。
-	// proto bool 无 presence 语义，约定 false=保持原值（更新并发开关走专用开关接口或留待后续）。
-	upd = upd.SetRemark(in.Remark)
+	// concurrent 是 bool，proto3 无 presence 语义，无法区分“未传”与 false；
+	// 管理端表单总会携带该值（默认 false=不允许并发），因此无条件应用。
+	// 直连 gRPC 的调用方需显式传 concurrent。
+	upd = upd.SetConcurrent(in.Concurrent).SetRemark(in.Remark)
 
 	ctx := systemCtx(l.ctx)
 	ctx = mixins.SetCurrentTenantId(ctx, 0)

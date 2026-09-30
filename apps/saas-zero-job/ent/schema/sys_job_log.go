@@ -27,7 +27,7 @@ func (SysJobLog) Fields() []ent.Field {
 		field.String("job_group").Default("").MaxLen(64).Comment("任务分组(快照) | Job Group(snapshot)"),
 		field.String("handler").Default("").MaxLen(128).Comment("处理器注册码(快照) | Handler Code(snapshot)"),
 		field.Enum("trigger_type").Values("cron", "manual", "retry").Default("cron").Comment("触发方式: cron-调度, manual-手动, retry-重试 | Trigger Type"),
-		field.String("exec_node").Default("").MaxLen(64).Comment("执行实例标识 | Executor Node"),
+		field.String("exec_node").Default("").MaxLen(128).Comment("执行实例标识(hostname:pid，容器主机名可能较长) | Executor Node"),
 		field.Enum("status").Values("running", "success", "fail", "timeout", "skipped").Default("running").Comment("执行状态 | Execution Status"),
 		field.Int32("attempt").Default(1).NonNegative().Comment("尝试次数(1=首次) | Attempt"),
 		field.String("message").Default("").MaxLen(500).Comment("结果摘要 | Result Message"),

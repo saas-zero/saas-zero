@@ -2,7 +2,6 @@
 基于zero构建的多租户微服务版本  
 
 认证服务 — OAuth 登录 / JWT 签发 / 令牌验证。
-地址：https://github.com/saas-zero/saas-zero-auth  
 
 | 属性 | 值 |
 |---|---|

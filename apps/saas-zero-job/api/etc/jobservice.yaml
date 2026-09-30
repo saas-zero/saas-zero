@@ -27,13 +27,3 @@ JobRpc:
       - 192.168.201.81:32379
     Key: jobservice.rpc
   Timeout: 10000
-
-# 已注册的处理器列表（与 rpc/internal/task/handlers.go 保持一致）
-# 新增 handler 时在此处添加
-Handlers:
-  - Code: demo.hello
-    Name: Demo Hello
-  - Code: demo.delay
-    Name: Demo Delay
-  - Code: demo.fail
-    Name: Demo Fail

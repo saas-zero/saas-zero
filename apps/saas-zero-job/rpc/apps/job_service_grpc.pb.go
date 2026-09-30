@@ -15,6 +15,7 @@ import (
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -55,11 +56,14 @@ type SysJobsClient interface {
 	// 暂停任务
 	PauseJob(ctx context.Context, in *IdReq, opts ...grpc.CallOption) (*EmptyResp, error)
 	// 立即执行任务 (不受 status 限制, 记 trigger=manual)
+	// 异步执行：接口只表示"已提交"，执行结果见 sys_job_logs 与 last_*/next_run_at
 	RunJobOnce(ctx context.Context, in *IdReq, opts ...grpc.CallOption) (*EmptyResp, error)
 	// 清理任务日志 (按 job_id+保留天数, 禁止全表)
 	CleanJobLog(ctx context.Context, in *CleanJobLogReq, opts ...grpc.CallOption) (*EmptyResp, error)
 	// 获取任务日志列表
 	GetJobLogList(ctx context.Context, in *JobLogListReq, opts ...grpc.CallOption) (*JobLogListResp, error)
+	// 获取已注册的处理器列表（本实例代码注册表，唯一来源）
+	GetRegisteredHandlers(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*HandlerListResp, error)
 }
 
 type sysJobsClient struct {
@@ -170,6 +174,16 @@ func (c *sysJobsClient) GetJobLogList(ctx context.Context, in *JobLogListReq, op
 	return out, nil
 }
 
+func (c *sysJobsClient) GetRegisteredHandlers(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*HandlerListResp, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HandlerListResp)
+	err := c.cc.Invoke(ctx, SysJobs_GetRegisteredHandlers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SysJobsServer is the server API for SysJobs service.
 // All implementations must embed UnimplementedSysJobsServer
 // for forward compatibility.
@@ -189,11 +203,14 @@ type SysJobsServer interface {
 	// 暂停任务
 	PauseJob(context.Context, *IdReq) (*EmptyResp, error)
 	// 立即执行任务 (不受 status 限制, 记 trigger=manual)
+	// 异步执行：接口只表示"已提交"，执行结果见 sys_job_logs 与 last_*/next_run_at
 	RunJobOnce(context.Context, *IdReq) (*EmptyResp, error)
 	// 清理任务日志 (按 job_id+保留天数, 禁止全表)
 	CleanJobLog(context.Context, *CleanJobLogReq) (*EmptyResp, error)
 	// 获取任务日志列表
 	GetJobLogList(context.Context, *JobLogListReq) (*JobLogListResp, error)
+	// 获取已注册的处理器列表（本实例代码注册表，唯一来源）
+	GetRegisteredHandlers(context.Context, *emptypb.Empty) (*HandlerListResp, error)
 	mustEmbedUnimplementedSysJobsServer()
 }
 
@@ -233,6 +250,9 @@ func (UnimplementedSysJobsServer) CleanJobLog(context.Context, *CleanJobLogReq) 
 }
 func (UnimplementedSysJobsServer) GetJobLogList(context.Context, *JobLogListReq) (*JobLogListResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetJobLogList not implemented")
+}
+func (UnimplementedSysJobsServer) GetRegisteredHandlers(context.Context, *emptypb.Empty) (*HandlerListResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRegisteredHandlers not implemented")
 }
 func (UnimplementedSysJobsServer) mustEmbedUnimplementedSysJobsServer() {}
 func (UnimplementedSysJobsServer) testEmbeddedByValue()                 {}
@@ -435,6 +455,24 @@ func _SysJobs_GetJobLogList_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SysJobs_GetRegisteredHandlers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SysJobsServer).GetRegisteredHandlers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SysJobs_GetRegisteredHandlers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SysJobsServer).GetRegisteredHandlers(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SysJobs_ServiceDesc is the grpc.ServiceDesc for SysJobs service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -481,6 +519,10 @@ var SysJobs_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetJobLogList",
 			Handler:    _SysJobs_GetJobLogList_Handler,
+		},
+		{
+			MethodName: "GetRegisteredHandlers",
+			Handler:    _SysJobs_GetRegisteredHandlers_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

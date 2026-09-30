@@ -2,7 +2,6 @@
 基于zero构建的多租户微服务版本  
 
 公共库，无 main 入口，作为 Go module 被各微服务 import 使用。
-地址：https://github.com/saas-zero/saas-zero-common  
 
 ## 包目录
 

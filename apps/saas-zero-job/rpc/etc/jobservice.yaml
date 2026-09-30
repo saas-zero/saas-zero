@@ -28,5 +28,7 @@ Scheduler:
   LogRetentionDays: 30
   # 每日日志清理小时（0-23）
   CleanupHour: 3
-  # 执行实例标识（多实例排查；空=hostname:pid:seq）
+  # 执行实例标识（写入 sys_job_logs.exec_node，多实例排查用；空=hostname:pid）
   Node: ""
+  # 关闭日志清理协程（默认 false=启用；仅本地排障用，生产不要开）
+  # CleanupDisabled: false

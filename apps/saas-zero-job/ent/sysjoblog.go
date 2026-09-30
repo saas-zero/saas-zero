@@ -34,7 +34,7 @@ type SysJobLog struct {
 	Handler string `json:"handler,omitempty"`
 	// 触发方式: cron-调度, manual-手动, retry-重试 | Trigger Type
 	TriggerType sysjoblog.TriggerType `json:"trigger_type,omitempty"`
-	// 执行实例标识 | Executor Node
+	// 执行实例标识(hostname:pid，容器主机名可能较长) | Executor Node
 	ExecNode string `json:"exec_node,omitempty"`
 	// 执行状态 | Execution Status
 	Status sysjoblog.Status `json:"status,omitempty"`

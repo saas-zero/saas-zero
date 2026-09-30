@@ -16,9 +16,33 @@ import (
 	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/rest"
 	"github.com/zeromicro/go-zero/rest/httpx"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var configFile = flag.String("f", "etc/jobservice.yaml", "the config file")
+
+// jobErrHandler 在通用 errno 处理器之上，把 job RPC 返回的 gRPC 状态错误还原为
+// 业务码+消息（RPC 侧 errnoInterceptor 做了业务码 → 状态码的映射）。
+// 不做这层还原的话，RPC 抛出的业务校验错误会在 HTTP 层退化成
+// 500 “内部服务器错误”，前端只能看到一个没有原因的弹框。
+func jobErrHandler(err error) (int, any) {
+	if st, ok := status.FromError(err); ok {
+		var code int
+		switch st.Code() {
+		case codes.InvalidArgument:
+			code = errno.InvalidParam.Code
+		case codes.PermissionDenied:
+			code = errno.Forbidden.Code
+		case codes.Unauthenticated:
+			code = errno.Unauthorized.Code
+		}
+		if code != 0 {
+			return code, map[string]any{"code": code, "msg": st.Message()}
+		}
+	}
+	return errno.ErrHandler(err)
+}
 
 func main() {
 	flag.Parse()
@@ -37,8 +61,8 @@ func main() {
 		}
 	}
 
-	// 统一错误响应（code 取自 common/errno）
-	httpx.SetErrorHandler(errno.ErrHandler)
+	// 统一错误响应（code 取自 common/errno；RPC 业务错误还原真实 msg）
+	httpx.SetErrorHandler(jobErrHandler)
 
 	server := rest.MustNewServer(c.RestConf)
 	defer server.Stop()

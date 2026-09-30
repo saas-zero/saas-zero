@@ -6,6 +6,7 @@ import (
 	"github.com/saas-zero/saas-zero-job/rpc/apps"
 	"github.com/saas-zero/saas-zero-job/rpc/internal/logic"
 	"github.com/saas-zero/saas-zero-job/rpc/internal/svc"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type SysJobsServer struct {
@@ -55,4 +56,8 @@ func (s *SysJobsServer) CleanJobLog(ctx context.Context, in *apps.CleanJobLogReq
 
 func (s *SysJobsServer) GetJobLogList(ctx context.Context, in *apps.JobLogListReq) (*apps.JobLogListResp, error) {
 	return logic.NewGetJobLogListLogic(ctx, s.svcCtx).GetJobLogList(in)
+}
+
+func (s *SysJobsServer) GetRegisteredHandlers(ctx context.Context, in *emptypb.Empty) (*apps.HandlerListResp, error) {
+	return logic.NewGetRegisteredHandlersLogic(ctx, s.svcCtx).GetRegisteredHandlers(in)
 }

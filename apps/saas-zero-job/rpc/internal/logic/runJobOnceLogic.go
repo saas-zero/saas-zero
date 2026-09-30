@@ -25,6 +25,10 @@ func NewRunJobOnceLogic(ctx context.Context, svcCtx *svc.ServiceContext) *RunJob
 }
 
 // RunJobOnce 立即执行一次（不受 status 限制，但必须存在且未删除；记录 trigger=manual）
+//
+// 异步语义：handler 在后台 goroutine 执行，本方法只表示“已提交”，
+// 返回值不代表执行成功——结果看 sys_job_logs 与 last_status/last_error。
+// 前端按钮提示已按此语义（“已触发执行，请查看任务日志”）。
 func (l *RunJobOnceLogic) RunJobOnce(in *apps.IdReq) (*apps.EmptyResp, error) {
 	if in == nil || in.Id == "" {
 		return nil, errInvalidParam("id is required")

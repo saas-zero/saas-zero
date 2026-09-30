@@ -38,7 +38,7 @@ type Options struct {
 	LogRetentionDays int
 	CleanupHour      int
 	Node             string
-	// Disable cleanup 关闭日志清理（测试用）
+	// Disable cleanup 关闭日志清理（测试/排障用）
 	DisableCleanup bool
 }
 
@@ -47,6 +47,8 @@ type JobEntry struct {
 	Job      *ent.SysJob
 	EntryID  cron.EntryID
 	Schedule cron.Schedule
+	// NextTick 下一个计划触发时刻（调度器自维护，多实例同一表达式得出同一序列，用作幂等锁粒度）
+	NextTick time.Time
 	LockKey  string // 并发锁 key
 }
 
@@ -59,15 +61,18 @@ type Scheduler struct {
 	reg  *Registry
 	cron *cron.Cron
 	node string
+	// parser 与 cron 实例共用同一解析器（5/6 位 + 描述符 + 时区前缀）
+	parser cron.Parser
 
 	mu      sync.RWMutex
 	entries map[int64]*JobEntry // jobID -> entry
 
-	syncInterval  time.Duration
-	retentionDays int
-	cleanupHour   int
-	stopCh        chan struct{}
-	stopOnce      sync.Once
+	syncInterval   time.Duration
+	retentionDays  int
+	cleanupHour    int
+	disableCleanup bool
+	stopCh         chan struct{}
+	stopOnce       sync.Once
 }
 
 // NewScheduler 创建调度器（不自动启动，需调用 Start）
@@ -83,22 +88,24 @@ func NewScheduler(opts Options) *Scheduler {
 	)
 	c := cron.New(cron.WithParser(parser))
 	return &Scheduler{
-		db:            opts.DB,
-		rds:           opts.Redis,
-		reg:           opts.Registry,
-		cron:          c,
-		node:          opts.Node,
-		entries:       make(map[int64]*JobEntry),
-		syncInterval:  time.Duration(opts.SyncIntervalSec) * time.Second,
-		retentionDays: opts.LogRetentionDays,
-		cleanupHour:   opts.CleanupHour,
-		stopCh:        make(chan struct{}),
+		db:             opts.DB,
+		rds:            opts.Redis,
+		reg:            opts.Registry,
+		cron:           c,
+		node:           opts.Node,
+		parser:         parser,
+		entries:        make(map[int64]*JobEntry),
+		syncInterval:   time.Duration(opts.SyncIntervalSec) * time.Second,
+		retentionDays:  opts.LogRetentionDays,
+		cleanupHour:    opts.CleanupHour,
+		disableCleanup: opts.DisableCleanup,
+		stopCh:         make(chan struct{}),
 	}
 }
 
 // Register 注册任务处理器（供业务代码 init 调用）
-func (s *Scheduler) Register(code string, fn HandlerFunc) error {
-	return s.reg.Register(code, fn)
+func (s *Scheduler) Register(code, name string, fn HandlerFunc) error {
+	return s.reg.Register(code, name, fn)
 }
 
 // Registry 返回注册表（供 RPC logic 校验 handler 是否存在）
@@ -128,7 +135,11 @@ func (s *Scheduler) Start() error {
 	s.cron.Start()
 
 	go s.syncLoop()
-	go s.cleanupLoop()
+	if s.disableCleanup {
+		logx.Info("job log cleanup disabled by config")
+	} else {
+		go s.cleanupLoop()
+	}
 	logx.Infof("scheduler started, %d jobs loaded, sync interval=%s", len(s.entries), s.syncInterval)
 	return nil
 }
@@ -237,26 +248,22 @@ func (s *Scheduler) syncFromDB() {
 // ------------------------------------------------------------
 
 func (s *Scheduler) addEntryLocked(j *ent.SysJob) error {
-	// per-job 时区：非默认时区用 CRON_TZ= 前缀，让 parser 构造带时区的 SpecSchedule；
-	// cron 内部用绝对时间差等待，跨时区不会错。
-	expr := j.CronExpression
-	if j.TimeZone != "" && j.TimeZone != defaultTimeZone &&
-		!strings.HasPrefix(expr, "CRON_TZ=") && !strings.HasPrefix(expr, "TZ=") {
-		expr = "CRON_TZ=" + j.TimeZone + " " + expr
+	sched, err := s.parseSchedule(j)
+	if err != nil {
+		return err
 	}
 
-	entryID, err := s.cron.AddJob(expr, cronJob(func() {
+	entryID := s.cron.Schedule(sched, cronJob(func() {
 		s.fire(j.ID, triggerTypeCron)
 	}))
-	if err != nil {
-		return fmt.Errorf("invalid cron %q: %w", j.CronExpression, err)
-	}
 
 	lockKey := concurrencyKeyPrefix + fmt.Sprintf("%d", j.ID)
 	s.entries[j.ID] = &JobEntry{
-		Job:     j,
-		EntryID: entryID,
-		LockKey: lockKey,
+		Job:      j,
+		EntryID:  entryID,
+		Schedule: sched,
+		NextTick: sched.Next(time.Now()),
+		LockKey:  lockKey,
 	}
 	return nil
 }
@@ -281,50 +288,52 @@ const (
 	triggerTypeManual triggerType = "manual"
 )
 
-// fire 任务触发入口（cron 回调）：misfire 检查 + 幂等锁 + 并发锁 + 执行
+// fire 任务触发入口（cron 回调）：幂等锁 → 漏跑处理 → 执行
+//
+// 幂等锁以“计划触发时刻”为粒度（由调度器自维护的链路给出，不取本地时钟），
+// 多实例即使本地时钟有偏差，同一调度轮次也命中同一把 key，从而只执行一次。
 func (s *Scheduler) fire(jobID int64, tt triggerType) {
 	ctx := context.Background()
 
-	// cron 触发时检查 misfire_policy：next_run_at 已过期说明之前漏跑了
 	if tt == triggerTypeCron {
-		j, err := s.db.SysJob.Get(ctx, jobID)
-		if err != nil {
-			logx.Errorf("job %d misfire check load: %v", jobID, err)
+		// 本轮计划时刻 + 下一轮时刻（链路自建，多实例一致）
+		tick, next := s.advanceNext(jobID)
+		if tick.IsZero() {
+			// entry 已不在调度表中（任务被暂停/删除，或 sync 已移除）：回调已过期，不再执行。
+			// 若任务仍应调度，syncFromDB 会重新 addEntryLocked。
+			logx.Errorf("job %d fired without schedule entry, dropped", jobID)
 			return
 		}
-		if !j.NextRunAt.IsZero() && j.NextRunAt.Before(time.Now()) {
-			switch j.MisfirePolicy {
-			case sysjob.MisfirePolicySkip:
-				s.recordLog(ctx, j, tt, sysjoblog.StatusSkipped, 0, "missed and skip policy", "", 0)
-				s.updateNextRunOnly(ctx, j)
-				logx.Infof("job %d skipped (misfire_policy=skip, next_run_at=%s)", jobID, j.NextRunAt.Format(time.RFC3339))
-				return
-			case sysjob.MisfirePolicyFireAll:
-				missed := countMissedRuns(j.NextRunAt, time.Now(), j.CronExpression)
-				if missed > 1 {
-					logx.Infof("job %d fire_all: %d missed runs", jobID, missed-1)
-					for i := 0; i < missed-1; i++ {
-						s.execute(ctx, jobID, tt)
-					}
+
+		lockKey := idempotencyKey(jobID, tick)
+		ok, err := s.rds.SetNX(lockKey, s.node, lockTTLSeconds)
+		if err != nil {
+			logx.Errorf("job %d idempotency lock: %v", jobID, err)
+			return
+		}
+		if !ok {
+			logx.Infof("job %d already fired by another instance, skip", jobID)
+			return
+		}
+		defer s.releaseLock(lockKey)
+
+		// 只有抢到锁的实例处理漏跑并回写 next_run_at，避免多实例重复补跑
+		j, err := s.db.SysJob.Get(ctx, jobID)
+		if err != nil {
+			logx.Errorf("job %d load for misfire: %v", jobID, err)
+		} else {
+			// 漏跑判定基准是上轮回写的 next_run_at，必须在覆盖它之前处理
+			s.handleMissed(ctx, j, tick)
+			// 回写下一轮计划时刻：本轮回写的是“下一个应触发时刻”，
+			// 长任务执行期间该值不会滞后，因此漏跑判定不受执行时长影响。
+			if !next.IsZero() {
+				if _, err := s.db.SysJob.UpdateOneID(jobID).SetNextRunAt(next).
+					Save(contextWithSystemUser(ctx, j)); err != nil {
+					logx.Errorf("job %d write next_run_at: %v", jobID, err)
 				}
-				// 最后一次由下面的正常流程执行
 			}
 		}
 	}
-
-	// 幂等锁：同一调度轮次只允许一个实例执行（多实例去重）
-	nextRun := time.Now().Unix()
-	lockKey := fmt.Sprintf("%s%d:%d", idempotencyKeyPrefix, jobID, nextRun)
-	ok, err := s.rds.SetNX(lockKey, s.node, lockTTLSeconds)
-	if err != nil {
-		logx.Errorf("job %d idempotency lock: %v", jobID, err)
-		return
-	}
-	if !ok {
-		logx.Infof("job %d already fired by another instance, skip", jobID)
-		return
-	}
-	defer s.releaseLock(lockKey)
 
 	s.execute(ctx, jobID, tt)
 }
@@ -455,7 +464,9 @@ func (s *Scheduler) releaseLock(key string) {
 	}
 }
 
-// updateJobAfterRun 更新 last_* 与 next_run_at（成功/失败两种终态）
+// updateJobAfterRun 更新 last_*（成功/失败两种终态）
+// next_run_at 不在这里回写：它在 cron 触发时由 fire 写入“下一个计划时刻”，
+// 与执行时长无关（长任务不会让 next_run_at 滞后而误判漏跑）。
 func (s *Scheduler) updateJobAfterRun(ctx context.Context, j *ent.SysJob, runErr error, duration int64) {
 	ctx = contextWithSystemUser(ctx, j)
 	upd := s.db.SysJob.UpdateOneID(j.ID).
@@ -470,15 +481,6 @@ func (s *Scheduler) updateJobAfterRun(ctx context.Context, j *ent.SysJob, runErr
 		upd = upd.SetLastError(msg)
 	} else {
 		upd = upd.SetLastStatus(string(sysjoblog.StatusSuccess)).ClearLastError()
-	}
-	// 回写下次触发时间：从调度条目计算（手动触发无条目则跳过）
-	s.mu.RLock()
-	entry := s.entries[j.ID]
-	s.mu.RUnlock()
-	if entry != nil && entry.Schedule != nil {
-		if next := entry.Schedule.Next(time.Now()); !next.IsZero() {
-			upd = upd.SetNextRunAt(next)
-		}
 	}
 	if _, err := upd.Save(ctx); err != nil {
 		logx.Errorf("update job %d last_*: %v", j.ID, err)
@@ -604,58 +606,127 @@ func (s *Scheduler) FireNow(ctx context.Context, jobID int64) error {
 	return nil
 }
 
-// updateNextRunOnly 只更新 next_run_at，不执行（misfire skip 用）
-func (s *Scheduler) updateNextRunOnly(ctx context.Context, j *ent.SysJob) {
-	ctx = contextWithSystemUser(ctx, j)
-	s.mu.RLock()
-	entry := s.entries[j.ID]
-	s.mu.RUnlock()
-	if entry != nil && entry.Schedule != nil {
-		if next := entry.Schedule.Next(time.Now()); !next.IsZero() {
-			if _, err := s.db.SysJob.UpdateOneID(j.ID).SetNextRunAt(next).Save(ctx); err != nil {
-				logx.Errorf("job %d update next_run_at: %v", j.ID, err)
-			}
-			return
-		}
+// parseSchedule 解析任务 cron 表达式（兼容 5/6 位 + 描述符）
+// per-job 时区：非默认时区加 CRON_TZ= 前缀，让 parser 构造带时区的 SpecSchedule；
+// cron 内部用绝对时间差等待，跳时区不会错。
+func (s *Scheduler) parseSchedule(j *ent.SysJob) (cron.Schedule, error) {
+	expr := j.CronExpression
+	if j.TimeZone != "" && j.TimeZone != defaultTimeZone &&
+		!strings.HasPrefix(expr, "CRON_TZ=") && !strings.HasPrefix(expr, "TZ=") {
+		expr = "CRON_TZ=" + j.TimeZone + " " + expr
 	}
-	// 无 entry 时，用 cron 解析器算下次时间
-	parser := cron.NewParser(
-		cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
-	)
-	schedule, err := parser.Parse(j.CronExpression)
+	sched, err := s.parser.Parse(expr)
 	if err != nil {
-		logx.Errorf("job %d parse cron %q for next_run: %v", j.ID, j.CronExpression, err)
+		return nil, fmt.Errorf("invalid cron %q: %w", j.CronExpression, err)
+	}
+	return sched, nil
+}
+
+// NextRunAt 用表达式推算任务的下次触发时刻（StartJob 恢复任务时重置漏跑窗口用）
+func (s *Scheduler) NextRunAt(j *ent.SysJob) time.Time {
+	if j == nil {
+		return time.Time{}
+	}
+	sched, err := s.parseSchedule(j)
+	if err != nil {
+		logx.Errorf("job %d parse cron %q for next_run_at: %v", j.ID, j.CronExpression, err)
+		return time.Time{}
+	}
+	return sched.Next(time.Now())
+}
+
+// advanceNext 取出本轮计划触发时刻并把链路推进到下一轮，返回 (本轮时刻, 下一轮时刻)。
+// 链路由调度器自维护而不读 cron 内部 Entry.Prev/Next：run 循环先起任务 goroutine
+// 再更新 Prev，从业务 goroutine 读有竞态；链路值由表达式递推，天然多实例一致。
+func (s *Scheduler) advanceNext(jobID int64) (time.Time, time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.entries[jobID]
+	if !ok || e.Schedule == nil {
+		return time.Time{}, time.Time{}
+	}
+	now := time.Now()
+	tick := e.NextTick
+	if tick.IsZero() {
+		tick = now
+	}
+	e.NextTick = e.Schedule.Next(now)
+	return tick, e.NextTick
+}
+
+// idempotencyKey 幂等锁 key：同一任务 + 同一计划时刻 → 同一 key（多实例去重）
+func idempotencyKey(jobID int64, tick time.Time) string {
+	return fmt.Sprintf("%s%d:%d", idempotencyKeyPrefix, jobID, tick.Unix())
+}
+
+// handleMissed 按 misfire_policy 处理漏跑轮次（当前轮次仍由 fire 正常执行）。
+// 基准是 sys_jobs.next_run_at（上轮回写的“下一个计划时刻”）：只有“应触发却没触发”
+// 的轮次才算漏跑（进程停机/实例阻塞）；暂停后恢复不算漏跑（StartJob 会重置基准）。
+// 漏跑轮次计算见 missedRunsBefore（已扣除本轮自身）。
+func (s *Scheduler) handleMissed(ctx context.Context, j *ent.SysJob, tick time.Time) {
+	if j.NextRunAt.IsZero() {
 		return
 	}
-	next := schedule.Next(time.Now())
-	if !next.IsZero() {
-		if _, err := s.db.SysJob.UpdateOneID(j.ID).SetNextRunAt(next).Save(ctx); err != nil {
-			logx.Errorf("job %d update next_run_at: %v", j.ID, err)
+	sched, err := s.parseSchedule(j)
+	if err != nil {
+		logx.Errorf("job %d misfire check parse cron: %v", j.ID, err)
+		return
+	}
+	missed := missedRunsBefore(sched, j.NextRunAt, tick)
+	if missed <= 0 {
+		return
+	}
+	switch j.MisfirePolicy {
+	case sysjob.MisfirePolicySkip:
+		s.recordLog(ctx, j, triggerTypeCron, sysjoblog.StatusSkipped, 0,
+			fmt.Sprintf("discard %d missed run(s) (misfire_policy=skip)", missed), "", 0)
+		logx.Infof("job %d discarded %d missed run(s) (misfire_policy=skip)", j.ID, missed)
+	case sysjob.MisfirePolicyFireOnce:
+		logx.Infof("job %d catch up 1 of %d missed run(s) (misfire_policy=fire_once)", j.ID, missed)
+		s.execute(ctx, j.ID, triggerTypeCron)
+	case sysjob.MisfirePolicyFireAll:
+		n := missed
+		if n > maxCatchUpRuns {
+			logx.Infof("job %d missed %d run(s), catch-up capped at %d (misfire_policy=fire_all)", j.ID, missed, maxCatchUpRuns)
+			n = maxCatchUpRuns
+		} else {
+			logx.Infof("job %d catch up %d missed run(s) (misfire_policy=fire_all)", j.ID, n)
+		}
+		for i := 0; i < n; i++ {
+			s.execute(ctx, j.ID, triggerTypeCron)
 		}
 	}
 }
 
-// countMissedRuns 计算从 from 到 to 之间 cron 表达式触发了多少次
-func countMissedRuns(from, to time.Time, cronExpr string) int {
-	if !from.Before(to) {
+// maxCatchUpRuns 单轮补跑上限：防止长时间停摆后一次性补跑过多（fire_all）
+const maxCatchUpRuns = 10
+
+// missedRunsBefore 本轮之前的真正漏跑轮次（正常执行时为 0）：
+// missedRuns 统计 (prevNextRunAt, tick] 内的计划时刻数，其中 tick 属于本轮正常执行，故减 1。
+func missedRunsBefore(sched cron.Schedule, prevNextRunAt, tick time.Time) int {
+	n := missedRuns(sched, prevNextRunAt, tick)
+	if n <= 0 {
 		return 0
 	}
-	parser := cron.NewParser(
-		cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
-	)
-	schedule, err := parser.Parse(cronExpr)
-	if err != nil {
+	return n - 1
+}
+
+// missedRuns 统计 (from, to] 区间内的计划触发次数，用于漏跑判定。
+func missedRuns(sched cron.Schedule, from, to time.Time) int {
+	if sched == nil || !from.Before(to) {
 		return 0
 	}
 	count := 0
-	t := from
-	for t.Before(to) {
-		t = schedule.Next(t)
-		if t.Before(to) || t.Equal(to) {
-			count++
+	for t := from; ; {
+		t = sched.Next(t)
+		if t.IsZero() || t.After(to) {
+			return count
+		}
+		count++
+		if count > maxCatchUpRuns {
+			return count // 已足够判定“多轮漏跑”，提前结束扫描
 		}
 	}
-	return count
 }
 
 // helper：cronJob 适配 cron.FuncJob

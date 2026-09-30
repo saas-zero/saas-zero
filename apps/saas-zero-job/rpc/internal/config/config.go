@@ -30,4 +30,6 @@ type SchedulerConfig struct {
 	CleanupHour int `json:"cleanupHour,optional,default=3"`
 	// Node 执行实例标识（多实例排查，默认取主机名+进程号）
 	Node string `json:"node,optional"`
+	// CleanupDisabled 关闭日志清理协程（默认 false = 启用；仅测试/排障用）
+	CleanupDisabled bool `json:"cleanupDisabled,optional"`
 }

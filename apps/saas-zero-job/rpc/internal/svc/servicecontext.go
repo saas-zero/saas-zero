@@ -2,12 +2,9 @@ package svc
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
-	"sort"
-	"sync/atomic"
 
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql/schema"
@@ -20,8 +17,6 @@ import (
 	"github.com/saas-zero/saas-zero-job/rpc/internal/task"
 	"github.com/zeromicro/go-zero/core/logx"
 )
-
-const redisKeyHandlers = "job:handlers"
 
 // ServiceContext job 服务上下文
 type ServiceContext struct {
@@ -57,16 +52,12 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		LogRetentionDays: c.Scheduler.LogRetentionDays,
 		CleanupHour:      c.Scheduler.CleanupHour,
 		Node:             node,
+		DisableCleanup:   c.Scheduler.CleanupDisabled,
 	})
 
 	// 注册内置任务处理器（必须在调度器 Start 之前，否则 Start 后首个触发周期可能命中未注册 handler）
 	if err := task.RegisterAll(sch.Registry()); err != nil {
 		log.Fatalf("failed registering task handlers: %v (fail-closed)", err)
-	}
-
-	// 将已注册的 handler 列表写入 Redis，供 job API HTTP 层读取
-	if err := publishHandlers(rds, sch.Registry()); err != nil {
-		logx.Errorf("publish handlers to redis: %v", err)
 	}
 
 	// 启动调度器：失败即中止服务（fail-closed），避免分布式环境下误触发
@@ -85,28 +76,8 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	}
 }
 
-// publishHandlers 将已注册的 handler code 列表写入 Redis（JSON 数组），供 HTTP 层读取。
-func publishHandlers(rds *redis.Client, reg *scheduler.Registry) error {
-	keys := reg.Keys()
-	sort.Strings(keys)
-	type handlerItem struct {
-		Code string `json:"code"`
-	}
-	items := make([]handlerItem, 0, len(keys))
-	for _, k := range keys {
-		items = append(items, handlerItem{Code: k})
-	}
-	data, err := json.Marshal(items)
-	if err != nil {
-		return err
-	}
-	return rds.Setex(redisKeyHandlers, string(data), 86400)
-}
-
-var schedulerNodeSeq atomic.Int64
-
-// schedulerNode 生成实例标识：优先配置，否则 hostname:pid:seq
-// 同机短生命周期多次启动时（测试/开发）用 seq 区分。
+// schedulerNode 生成实例标识：优先配置，否则 hostname:pid
+// （执行节点写入 sys_job_logs.exec_node，用于多实例排查）
 func schedulerNode(configured string) string {
 	if configured != "" {
 		return configured
@@ -115,5 +86,5 @@ func schedulerNode(configured string) string {
 	if err != nil || host == "" {
 		host = "unknown"
 	}
-	return fmt.Sprintf("%s:%d:%d", host, os.Getpid(), schedulerNodeSeq.Add(1))
+	return fmt.Sprintf("%s:%d", host, os.Getpid())
 }

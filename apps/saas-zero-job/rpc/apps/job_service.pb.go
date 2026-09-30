@@ -13,6 +13,7 @@ package apps
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -841,11 +842,107 @@ func (x *CleanJobLogReq) GetKeepDays() int32 {
 	return 0
 }
 
+type HandlerItem struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Code          string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"` // 注册码，如 "report.daily"
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"` // 展示名（代码注册表内置）
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HandlerItem) Reset() {
+	*x = HandlerItem{}
+	mi := &file_job_service_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HandlerItem) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HandlerItem) ProtoMessage() {}
+
+func (x *HandlerItem) ProtoReflect() protoreflect.Message {
+	mi := &file_job_service_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HandlerItem.ProtoReflect.Descriptor instead.
+func (*HandlerItem) Descriptor() ([]byte, []int) {
+	return file_job_service_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *HandlerItem) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *HandlerItem) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type HandlerListResp struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	List          []*HandlerItem         `protobuf:"bytes,1,rep,name=list,proto3" json:"list,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HandlerListResp) Reset() {
+	*x = HandlerListResp{}
+	mi := &file_job_service_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HandlerListResp) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HandlerListResp) ProtoMessage() {}
+
+func (x *HandlerListResp) ProtoReflect() protoreflect.Message {
+	mi := &file_job_service_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HandlerListResp.ProtoReflect.Descriptor instead.
+func (*HandlerListResp) Descriptor() ([]byte, []int) {
+	return file_job_service_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *HandlerListResp) GetList() []*HandlerItem {
+	if x != nil {
+		return x.List
+	}
+	return nil
+}
+
 var File_job_service_proto protoreflect.FileDescriptor
 
 const file_job_service_proto_rawDesc = "" +
 	"\n" +
-	"\x11job_service.proto\x12\vjob_service\"\xef\x04\n" +
+	"\x11job_service.proto\x12\vjob_service\x1a\x1bgoogle/protobuf/empty.proto\"\xef\x04\n" +
 	"\x03Job\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -923,7 +1020,12 @@ const file_job_service_proto_rawDesc = "" +
 	"\x05total\x18\x02 \x01(\x03R\x05total\"D\n" +
 	"\x0eCleanJobLogReq\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1b\n" +
-	"\tkeep_days\x18\x02 \x01(\x05R\bkeepDays2\xde\x04\n" +
+	"\tkeep_days\x18\x02 \x01(\x05R\bkeepDays\"5\n" +
+	"\vHandlerItem\x12\x12\n" +
+	"\x04code\x18\x01 \x01(\tR\x04code\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"?\n" +
+	"\x0fHandlerListResp\x12,\n" +
+	"\x04list\x18\x01 \x03(\v2\x18.job_service.HandlerItemR\x04list2\xad\x05\n" +
 	"\aSysJobs\x122\n" +
 	"\n" +
 	"GetJobById\x12\x12.job_service.IdReq\x1a\x10.job_service.Job\x12?\n" +
@@ -937,7 +1039,8 @@ const file_job_service_proto_rawDesc = "" +
 	"\n" +
 	"RunJobOnce\x12\x12.job_service.IdReq\x1a\x16.job_service.EmptyResp\x12B\n" +
 	"\vCleanJobLog\x12\x1b.job_service.CleanJobLogReq\x1a\x16.job_service.EmptyResp\x12H\n" +
-	"\rGetJobLogList\x12\x1a.job_service.JobLogListReq\x1a\x1b.job_service.JobLogListRespB\bZ\x06./appsb\x06proto3"
+	"\rGetJobLogList\x12\x1a.job_service.JobLogListReq\x1a\x1b.job_service.JobLogListResp\x12M\n" +
+	"\x15GetRegisteredHandlers\x12\x16.google.protobuf.Empty\x1a\x1c.job_service.HandlerListRespB\bZ\x06./appsb\x06proto3"
 
 var (
 	file_job_service_proto_rawDescOnce sync.Once
@@ -951,47 +1054,53 @@ func file_job_service_proto_rawDescGZIP() []byte {
 	return file_job_service_proto_rawDescData
 }
 
-var file_job_service_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_job_service_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_job_service_proto_goTypes = []any{
-	(*Job)(nil),            // 0: job_service.Job
-	(*IdReq)(nil),          // 1: job_service.IdReq
-	(*IdsReq)(nil),         // 2: job_service.IdsReq
-	(*EmptyResp)(nil),      // 3: job_service.EmptyResp
-	(*JobListReq)(nil),     // 4: job_service.JobListReq
-	(*JobListResp)(nil),    // 5: job_service.JobListResp
-	(*JobLog)(nil),         // 6: job_service.JobLog
-	(*JobLogListReq)(nil),  // 7: job_service.JobLogListReq
-	(*JobLogListResp)(nil), // 8: job_service.JobLogListResp
-	(*CleanJobLogReq)(nil), // 9: job_service.CleanJobLogReq
+	(*Job)(nil),             // 0: job_service.Job
+	(*IdReq)(nil),           // 1: job_service.IdReq
+	(*IdsReq)(nil),          // 2: job_service.IdsReq
+	(*EmptyResp)(nil),       // 3: job_service.EmptyResp
+	(*JobListReq)(nil),      // 4: job_service.JobListReq
+	(*JobListResp)(nil),     // 5: job_service.JobListResp
+	(*JobLog)(nil),          // 6: job_service.JobLog
+	(*JobLogListReq)(nil),   // 7: job_service.JobLogListReq
+	(*JobLogListResp)(nil),  // 8: job_service.JobLogListResp
+	(*CleanJobLogReq)(nil),  // 9: job_service.CleanJobLogReq
+	(*HandlerItem)(nil),     // 10: job_service.HandlerItem
+	(*HandlerListResp)(nil), // 11: job_service.HandlerListResp
+	(*emptypb.Empty)(nil),   // 12: google.protobuf.Empty
 }
 var file_job_service_proto_depIdxs = []int32{
 	0,  // 0: job_service.JobListResp.list:type_name -> job_service.Job
 	6,  // 1: job_service.JobLogListResp.list:type_name -> job_service.JobLog
-	1,  // 2: job_service.SysJobs.GetJobById:input_type -> job_service.IdReq
-	4,  // 3: job_service.SysJobs.GetJobList:input_type -> job_service.JobListReq
-	0,  // 4: job_service.SysJobs.CreateJob:input_type -> job_service.Job
-	0,  // 5: job_service.SysJobs.UpdateJob:input_type -> job_service.Job
-	2,  // 6: job_service.SysJobs.DeleteJob:input_type -> job_service.IdsReq
-	1,  // 7: job_service.SysJobs.StartJob:input_type -> job_service.IdReq
-	1,  // 8: job_service.SysJobs.PauseJob:input_type -> job_service.IdReq
-	1,  // 9: job_service.SysJobs.RunJobOnce:input_type -> job_service.IdReq
-	9,  // 10: job_service.SysJobs.CleanJobLog:input_type -> job_service.CleanJobLogReq
-	7,  // 11: job_service.SysJobs.GetJobLogList:input_type -> job_service.JobLogListReq
-	0,  // 12: job_service.SysJobs.GetJobById:output_type -> job_service.Job
-	5,  // 13: job_service.SysJobs.GetJobList:output_type -> job_service.JobListResp
-	3,  // 14: job_service.SysJobs.CreateJob:output_type -> job_service.EmptyResp
-	3,  // 15: job_service.SysJobs.UpdateJob:output_type -> job_service.EmptyResp
-	3,  // 16: job_service.SysJobs.DeleteJob:output_type -> job_service.EmptyResp
-	3,  // 17: job_service.SysJobs.StartJob:output_type -> job_service.EmptyResp
-	3,  // 18: job_service.SysJobs.PauseJob:output_type -> job_service.EmptyResp
-	3,  // 19: job_service.SysJobs.RunJobOnce:output_type -> job_service.EmptyResp
-	3,  // 20: job_service.SysJobs.CleanJobLog:output_type -> job_service.EmptyResp
-	8,  // 21: job_service.SysJobs.GetJobLogList:output_type -> job_service.JobLogListResp
-	12, // [12:22] is the sub-list for method output_type
-	2,  // [2:12] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	10, // 2: job_service.HandlerListResp.list:type_name -> job_service.HandlerItem
+	1,  // 3: job_service.SysJobs.GetJobById:input_type -> job_service.IdReq
+	4,  // 4: job_service.SysJobs.GetJobList:input_type -> job_service.JobListReq
+	0,  // 5: job_service.SysJobs.CreateJob:input_type -> job_service.Job
+	0,  // 6: job_service.SysJobs.UpdateJob:input_type -> job_service.Job
+	2,  // 7: job_service.SysJobs.DeleteJob:input_type -> job_service.IdsReq
+	1,  // 8: job_service.SysJobs.StartJob:input_type -> job_service.IdReq
+	1,  // 9: job_service.SysJobs.PauseJob:input_type -> job_service.IdReq
+	1,  // 10: job_service.SysJobs.RunJobOnce:input_type -> job_service.IdReq
+	9,  // 11: job_service.SysJobs.CleanJobLog:input_type -> job_service.CleanJobLogReq
+	7,  // 12: job_service.SysJobs.GetJobLogList:input_type -> job_service.JobLogListReq
+	12, // 13: job_service.SysJobs.GetRegisteredHandlers:input_type -> google.protobuf.Empty
+	0,  // 14: job_service.SysJobs.GetJobById:output_type -> job_service.Job
+	5,  // 15: job_service.SysJobs.GetJobList:output_type -> job_service.JobListResp
+	3,  // 16: job_service.SysJobs.CreateJob:output_type -> job_service.EmptyResp
+	3,  // 17: job_service.SysJobs.UpdateJob:output_type -> job_service.EmptyResp
+	3,  // 18: job_service.SysJobs.DeleteJob:output_type -> job_service.EmptyResp
+	3,  // 19: job_service.SysJobs.StartJob:output_type -> job_service.EmptyResp
+	3,  // 20: job_service.SysJobs.PauseJob:output_type -> job_service.EmptyResp
+	3,  // 21: job_service.SysJobs.RunJobOnce:output_type -> job_service.EmptyResp
+	3,  // 22: job_service.SysJobs.CleanJobLog:output_type -> job_service.EmptyResp
+	8,  // 23: job_service.SysJobs.GetJobLogList:output_type -> job_service.JobLogListResp
+	11, // 24: job_service.SysJobs.GetRegisteredHandlers:output_type -> job_service.HandlerListResp
+	14, // [14:25] is the sub-list for method output_type
+	3,  // [3:14] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_job_service_proto_init() }
@@ -1005,7 +1114,7 @@ func file_job_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_job_service_proto_rawDesc), len(file_job_service_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

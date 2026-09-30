@@ -11,7 +11,6 @@ API 网关 — go-zero gateway 纯 HTTP 透传代理。统一入口 `:18080`。
 基于zero构建的多租户微服务版本  
 
 网关不处理业务逻辑，只做请求转发。所有 JWT 认证、Casbin 权限检查由后端服务自行完成。
-地址：https://github.com/saas-zero/saas-zero-gateway  
 
 ## 配置
 

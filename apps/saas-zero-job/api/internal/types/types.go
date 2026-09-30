@@ -1,33 +1,37 @@
 package types
 
 // Job 任务定义（与 RPC Job 对齐，id 用 string 防前端精度丢失）
+// 所有字段必须标 optional：go-zero 的 mapping 只以 `optional` 判定可选
+// （omitempty 不被识别），未标 optional 的字段在 httpx.Parse 时一律视为必填，
+// 缺失即报 `field "xxx" is not set`（HTTP 500）。
 type Job struct {
-	Id             string `json:"id" form:"id"`
-	CreatedAt      int64  `json:"createdAt,omitempty"`
-	UpdatedAt      int64  `json:"updatedAt,omitempty"`
-	Name           string `json:"name,omitempty"`
-	Group          string `json:"group,omitempty"`
-	Handler        string `json:"handler,omitempty"`
-	Params         string `json:"params,omitempty"`
-	CronExpression string `json:"cronExpression" form:"cronExpression"`
-	TimeZone       string `json:"timeZone,omitempty"`
-	MisfirePolicy  string `json:"misfirePolicy,omitempty"`
-	Concurrent     bool   `json:"concurrent" form:"concurrent"`
-	Timeout        int32  `json:"timeout,omitempty"`
-	MaxRetry       int32  `json:"maxRetry,omitempty"`
-	RetryInterval  int32  `json:"retryInterval,omitempty"`
-	Status         string `json:"status,omitempty"`
-	Remark         string `json:"remark,omitempty"`
-	NextRunAt      int64  `json:"nextRunAt,omitempty"`
-	LastRunAt      int64  `json:"lastRunAt,omitempty"`
-	LastStatus     string `json:"lastStatus,omitempty"`
-	LastDuration   int64  `json:"lastDuration,omitempty"`
-	LastError      string `json:"lastError,omitempty"`
+	Id             string `json:"id,optional" form:"id,optional"`
+	CreatedAt      int64  `json:"createdAt,omitempty,optional"`
+	UpdatedAt      int64  `json:"updatedAt,omitempty,optional"`
+	Name           string `json:"name,omitempty,optional"`
+	Group          string `json:"group,omitempty,optional"`
+	Handler        string `json:"handler,omitempty,optional"`
+	Params         string `json:"params,omitempty,optional"`
+	CronExpression string `json:"cronExpression,optional" form:"cronExpression,optional"`
+	TimeZone       string `json:"timeZone,omitempty,optional"`
+	MisfirePolicy  string `json:"misfirePolicy,omitempty,optional"`
+	Concurrent     bool   `json:"concurrent,optional" form:"concurrent,optional"`
+	Timeout        int32  `json:"timeout,omitempty,optional"`
+	MaxRetry       int32  `json:"maxRetry,omitempty,optional"`
+	RetryInterval  int32  `json:"retryInterval,omitempty,optional"`
+	Status         string `json:"status,omitempty,optional"`
+	Remark         string `json:"remark,omitempty,optional"`
+	NextRunAt      int64  `json:"nextRunAt,omitempty,optional"`
+	LastRunAt      int64  `json:"lastRunAt,omitempty,optional"`
+	LastStatus     string `json:"lastStatus,omitempty,optional"`
+	LastDuration   int64  `json:"lastDuration,omitempty,optional"`
+	LastError      string `json:"lastError,omitempty,optional"`
 }
 
-// IdReq 单 ID 请求（detail/start/pause/runOnce 用 query id）
+// IdReq 单 ID 请求（detail 走 query id，start/pause/runOnce 走 JSON body id）
+// 必填由 RPC 校验（id is required），HTTP 层只负责解析，故标 optional。
 type IdReq struct {
-	Id string `json:"id" form:"id"`
+	Id string `json:"id,optional" form:"id,optional"`
 }
 
 // JobLog 任务执行日志
@@ -89,11 +93,11 @@ type JobLogPageResp struct {
 
 // IdsReq 批量删除
 type IdsReq struct {
-	Ids []string `json:"ids"`
+	Ids []string `json:"ids,optional"`
 }
 
 // CleanJobLogReq 清理日志
 type CleanJobLogReq struct {
-	JobId    string `json:"jobId"`
-	KeepDays int32  `json:"keepDays"`
+	JobId    string `json:"jobId,optional"`
+	KeepDays int32  `json:"keepDays,optional"`
 }

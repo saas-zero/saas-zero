@@ -52,9 +52,12 @@ func (l *StartJobLogic) StartJob(in *apps.IdReq) (*apps.EmptyResp, error) {
 	}
 
 	ctx := systemCtx(l.ctx)
-	if _, err := l.svcCtx.DB.SysJob.UpdateOneID(id).
-		SetStatus(sysjob.StatusActive).
-		Save(ctx); err != nil {
+	// 重置漏跑窗口：暂停期间不应补跑（misfire 判定以 next_run_at 为基准）
+	upd := l.svcCtx.DB.SysJob.UpdateOneID(id).SetStatus(sysjob.StatusActive)
+	if next := l.svcCtx.Scheduler.NextRunAt(j); !next.IsZero() {
+		upd = upd.SetNextRunAt(next)
+	}
+	if _, err := upd.Save(ctx); err != nil {
 		return nil, err
 	}
 
